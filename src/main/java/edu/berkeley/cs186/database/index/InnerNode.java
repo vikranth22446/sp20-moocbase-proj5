@@ -7,10 +7,12 @@ import edu.berkeley.cs186.database.common.Buffer;
 import edu.berkeley.cs186.database.common.Pair;
 import edu.berkeley.cs186.database.concurrency.LockContext;
 import edu.berkeley.cs186.database.databox.DataBox;
+import edu.berkeley.cs186.database.databox.IntDataBox;
 import edu.berkeley.cs186.database.databox.Type;
 import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.memory.Page;
 import edu.berkeley.cs186.database.table.RecordId;
+
 
 /**
  * A inner node of a B+ tree. Every inner node in a B+ tree of order d stores
@@ -79,8 +81,9 @@ class InnerNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
-
-        return null;
+       int index = numLessThanEqual(key, this.keys);
+       BPlusNode child = getChild(index);
+       return child.get(key);
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -89,15 +92,57 @@ class InnerNode extends BPlusNode {
         assert(children.size() > 0);
         // TODO(proj2): implement
 
-        return null;
+        return this.getChild(0).getLeftmostLeaf();
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
+        int index = numLessThanEqual(key, this.keys);
+        BPlusNode child = getChild(index);
+        Optional<Pair<DataBox, Long>> p = child.put(key, rid);
 
-        return Optional.empty();
+        if (p.isPresent()) {
+            DataBox splitKey = p.get().getFirst();
+            int splitIndex = numLessThanEqual(splitKey, this.keys);
+
+            this.keys.add(splitIndex, splitKey);
+            this.children.add(splitIndex + 1, p.get().getSecond());
+
+            if (2 * this.metadata.getOrder() - this.keys.size() >= 0) {
+                sync();
+                return Optional.empty();
+
+            } else {
+                List<DataBox> rightKeys = new ArrayList<>();
+                List<Long> rightChildren = new ArrayList<>();
+
+                for (int i = this.metadata.getOrder()+1; i < this.keys.size(); i++) {
+                    rightKeys.add(this.keys.get(i));
+                }
+                for (int i = this.metadata.getOrder()+1; i < this.children.size(); i++) {
+                    rightChildren.add(this.children.get(i));
+                }
+                InnerNode rightNode = new InnerNode(this.metadata, this.bufferManager, rightKeys, rightChildren, this.treeContext);
+                DataBox splitRightKey = this.keys.get(this.metadata.getOrder());
+
+
+                this.keys = this.keys.subList(0, this.metadata.getOrder());
+                this.children = this.children.subList(0, this.metadata.getOrder()+1);
+
+
+
+                sync();
+                Pair reference = new Pair(splitRightKey, rightNode.getPage().getPageNum());
+
+                return Optional.of(reference);
+            }
+        } else {
+            sync();
+            return Optional.empty();
+        }
+
     }
 
     // See BPlusNode.bulkLoad.
@@ -105,7 +150,48 @@ class InnerNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
         // TODO(proj2): implement
+        if (!data.hasNext()) {
+            return Optional.empty();
+        }
+        while(data.hasNext()) {
+            Optional<Pair<DataBox, Long>> ptr = getChild(this.children.size()-1).bulkLoad(data, fillFactor);
+            if (ptr.isPresent()) {
+                DataBox key = ptr.get().getFirst();
+                int addIndex = numLessThanEqual(key, this.keys);
+                this.keys.add(addIndex, key);
+                this.children.add(addIndex, ptr.get().getSecond());
 
+                if (2 * this.metadata.getOrder() - this.keys.size() < 0) {
+                    List<DataBox> rightKeys = new ArrayList<>();
+                    List<Long> rightChildren = new ArrayList<>();
+
+
+                    for (int i = this.metadata.getOrder()+1; i < this.keys.size(); i++) {
+                        rightKeys.add(this.keys.get(i));
+
+                    }
+                    for (int i = this.metadata.getOrder()+1; i < this.children.size(); i++) {
+                        rightChildren.add(this.children.get(i));
+
+                    }
+
+                    InnerNode rightNode = new InnerNode(this.metadata, this.bufferManager, rightKeys, rightChildren, this.treeContext);
+                    DataBox splitRightKey = this.keys.get(this.metadata.getOrder());
+
+                    this.keys = this.keys.subList(this.metadata.getOrder(), this.keys.size());
+                    this.children = this.children.subList(this.metadata.getOrder()+1, this.children.size());
+
+                    sync();
+                    Pair reference = new Pair(splitRightKey, rightNode.getPage().getPageNum());
+
+                    return Optional.of(reference);
+                }
+            } else {
+                sync();
+                return Optional.empty();
+            }
+        }
+        sync();
         return Optional.empty();
     }
 
@@ -113,8 +199,7 @@ class InnerNode extends BPlusNode {
     @Override
     public void remove(DataBox key) {
         // TODO(proj2): implement
-
-        return;
+        get(key).remove(key);
     }
 
     // Helpers ///////////////////////////////////////////////////////////////////

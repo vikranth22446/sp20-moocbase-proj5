@@ -422,7 +422,7 @@ public class TestBPlusTree {
                 for (int i = 0; i < keys.size(); ++i) {
                     tree.put(keys.get(i), rids.get(i));
                 }
-
+                System.out.println(tree.toSexp());
                 // Test get.
                 for (int i = 0; i < keys.size(); ++i) {
                     assertEquals(Optional.of(rids.get(i)), tree.get(keys.get(i)));

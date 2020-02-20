@@ -12,6 +12,7 @@ import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.memory.Page;
 import edu.berkeley.cs186.database.table.RecordId;
 
+
 /**
  * A leaf of a B+ tree. Every leaf in a B+ tree of order d stores between d and
  * 2d (key, record id) pairs and a pointer to its right sibling (i.e. the page
@@ -142,7 +143,8 @@ class LeafNode extends BPlusNode {
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
 
-        return null;
+        return this;
+
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -150,15 +152,45 @@ class LeafNode extends BPlusNode {
     public LeafNode getLeftmostLeaf() {
         // TODO(proj2): implement
 
-        return null;
+        return this;
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
+        if (this.keys.contains(key)) {
+            throw new BPlusTreeException("Duplicate keys not allowed.");
+        }
+        int index = InnerNode.numLessThan(key, this.keys);
+        this.keys.add(index, key);
+        this.rids.add(index, rid);
 
-        return Optional.empty();
+        if (2 * this.metadata.getOrder() - this.keys.size() >= 0) {
+            sync();
+            return Optional.empty();
+
+        } else {
+            List<DataBox> rightKeys = new ArrayList<>();
+            List<RecordId> rightIds = new ArrayList<>();
+
+
+            for (int i = this.metadata.getOrder(); i < this.keys.size(); i++) {
+                rightKeys.add(this.keys.get(i));
+                rightIds.add(this.rids.get(i));
+            }
+
+            LeafNode rightNode = new LeafNode(this.metadata, this.bufferManager, rightKeys, rightIds, this.rightSibling, this.treeContext);
+            this.rightSibling = Optional.of(rightNode.getPage().getPageNum());
+
+            this.keys = this.keys.subList(0, this.metadata.getOrder());
+            this.rids = this.rids.subList(0, this.metadata.getOrder());
+
+            sync();
+            Pair reference = new Pair(rightNode.keys.get(0), rightNode.getPage().getPageNum());
+
+            return Optional.of(reference);
+        }
     }
 
     // See BPlusNode.bulkLoad.
@@ -166,8 +198,36 @@ class LeafNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
         // TODO(proj2): implement
+        if(!data.hasNext()) {
+            return Optional.empty();
+        }
 
-        return Optional.empty();
+        while (this.keys.size() < fillFactor * 2 * this.metadata.getOrder() && data.hasNext()) {
+            Pair<DataBox, RecordId> p = data.next();
+            this.keys.add(p.getFirst());
+            this.rids.add(p.getSecond());
+        }
+        List<DataBox> rightKeys = new ArrayList<>();
+        List<RecordId> rightIds = new ArrayList<>();
+
+
+
+        if (data.hasNext()) {
+            Pair<DataBox, RecordId> p = data.next();
+            rightKeys.add(p.getFirst());
+            rightIds.add(p.getSecond());
+
+            LeafNode rightNode = new LeafNode(this.metadata, this.bufferManager, rightKeys, rightIds, this.rightSibling, this.treeContext);
+            this.rightSibling = Optional.of(rightNode.getPage().getPageNum());
+
+            sync();
+            Pair reference = new Pair(p.getFirst(), rightNode.getPage().getPageNum());
+            return Optional.of(reference);
+        } else {
+            return Optional.empty();
+        }
+
+
     }
 
     // See BPlusNode.remove.
@@ -175,7 +235,12 @@ class LeafNode extends BPlusNode {
     public void remove(DataBox key) {
         // TODO(proj2): implement
 
-        return;
+        if(this.keys.contains(key)) {
+            int index = this.keys.indexOf(key);
+            this.keys.remove(index);
+            this.rids.remove(index);
+        }
+        sync();
     }
 
     // Iterators /////////////////////////////////////////////////////////////////

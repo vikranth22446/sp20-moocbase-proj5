@@ -134,7 +134,7 @@ abstract class BPlusNode {
      * duplicate key is inserted, the tree is left unchanged and an exception is
      * raised.
      */
-    public abstract Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid);
+    public abstract Optional put(DataBox key, RecordId rid);
 
     /**
      * n.bulkLoad(data, fillFactor) bulk loads pairs of (k, r) from data into

@@ -286,6 +286,7 @@ public class TestLeafNode {
         assertEquals("((1 (1 1)) (2 (2 2)) (4 (4 4)))", leaf.toSexp());
         leaf.put(new IntDataBox(3), new RecordId(3, (short) 3));
         assertEquals("((1 (1 1)) (2 (2 2)) (3 (3 3)) (4 (4 4)))", leaf.toSexp());
+
     }
 
     @Test

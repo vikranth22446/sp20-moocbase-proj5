@@ -285,9 +285,31 @@ public class BPlusTree {
     public void bulkLoad(Iterator<Pair<DataBox, RecordId>> data, float fillFactor) {
         // TODO(proj2): implement
 
+        if (!this.root.toSexp().equals("()")) {
+            throw new BPlusTreeException("Tree is not empty");
+        }
+
+        while (data.hasNext()) {
+            Optional<Pair<DataBox, Long>> result = this.root.bulkLoad(data, fillFactor);
+            if (result.isPresent()) {
+                Pair<DataBox, Long> ptr = result.get();
+                DataBox addKey = ptr.getFirst();
+                Long pageNum = ptr.getSecond();
+
+                List<DataBox> keys = new ArrayList<>();
+                List<Long> children = new ArrayList<>();
+                keys.add(addKey);
+                children.add(this.root.getPage().getPageNum());
+                children.add(pageNum);
+
+                BPlusNode newRoot = new InnerNode(this.metadata, this.bufferManager, keys, children, this.lockContext);
+                this.updateRoot(newRoot);
+            }
+        }
+
         // TODO(proj4_part2): B+ tree locking
 
-        return;
+
     }
 
     /**

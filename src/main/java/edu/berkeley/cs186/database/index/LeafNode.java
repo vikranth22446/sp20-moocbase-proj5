@@ -207,13 +207,14 @@ class LeafNode extends BPlusNode {
             this.keys.add(p.getFirst());
             this.rids.add(p.getSecond());
         }
-        List<DataBox> rightKeys = new ArrayList<>();
-        List<RecordId> rightIds = new ArrayList<>();
-
 
 
         if (data.hasNext()) {
+            List<DataBox> rightKeys = new ArrayList<>();
+            List<RecordId> rightIds = new ArrayList<>();
+
             Pair<DataBox, RecordId> p = data.next();
+
             rightKeys.add(p.getFirst());
             rightIds.add(p.getSecond());
 
@@ -224,6 +225,7 @@ class LeafNode extends BPlusNode {
             Pair reference = new Pair(p.getFirst(), rightNode.getPage().getPageNum());
             return Optional.of(reference);
         } else {
+            sync();
             return Optional.empty();
         }
 

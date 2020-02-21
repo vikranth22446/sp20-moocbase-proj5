@@ -7,7 +7,6 @@ import edu.berkeley.cs186.database.common.Buffer;
 import edu.berkeley.cs186.database.common.Pair;
 import edu.berkeley.cs186.database.concurrency.LockContext;
 import edu.berkeley.cs186.database.databox.DataBox;
-import edu.berkeley.cs186.database.databox.IntDataBox;
 import edu.berkeley.cs186.database.databox.Type;
 import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.memory.Page;
@@ -153,13 +152,25 @@ class InnerNode extends BPlusNode {
         if (!data.hasNext()) {
             return Optional.empty();
         }
-        while(data.hasNext()) {
-            Optional<Pair<DataBox, Long>> ptr = getChild(this.children.size()-1).bulkLoad(data, fillFactor);
+
+        LeafNode toBulk = getLeftmostLeaf();
+        while (toBulk.getRightSibling().isPresent()) {
+            toBulk = toBulk.getRightSibling().get();
+        }
+
+
+        while (data.hasNext()) {
+            Optional<Pair<DataBox, Long>> ptr = toBulk.bulkLoad(data, fillFactor);
             if (ptr.isPresent()) {
                 DataBox key = ptr.get().getFirst();
-                int addIndex = numLessThanEqual(key, this.keys);
-                this.keys.add(addIndex, key);
-                this.children.add(addIndex, ptr.get().getSecond());
+
+                this.keys.add(key);
+                this.children.add(ptr.get().getSecond());
+
+                if (!toBulk.getRightSibling().isPresent()) {
+                    return  ptr;
+                }
+                toBulk = toBulk.getRightSibling().get();
 
                 if (2 * this.metadata.getOrder() - this.keys.size() < 0) {
                     List<DataBox> rightKeys = new ArrayList<>();
@@ -178,8 +189,8 @@ class InnerNode extends BPlusNode {
                     InnerNode rightNode = new InnerNode(this.metadata, this.bufferManager, rightKeys, rightChildren, this.treeContext);
                     DataBox splitRightKey = this.keys.get(this.metadata.getOrder());
 
-                    this.keys = this.keys.subList(this.metadata.getOrder(), this.keys.size());
-                    this.children = this.children.subList(this.metadata.getOrder()+1, this.children.size());
+                    this.keys = this.keys.subList(0, this.metadata.getOrder());
+                    this.children = this.children.subList(0, this.metadata.getOrder()+1);
 
                     sync();
                     Pair reference = new Pair(splitRightKey, rightNode.getPage().getPageNum());
@@ -190,6 +201,7 @@ class InnerNode extends BPlusNode {
                 sync();
                 return Optional.empty();
             }
+
         }
         sync();
         return Optional.empty();

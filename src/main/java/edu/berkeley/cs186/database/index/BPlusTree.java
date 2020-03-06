@@ -445,10 +445,7 @@ public class BPlusTree {
         @Override
         public boolean hasNext() {
             // TODO(proj2): implement
-            if (this.i.hasNext() || this.leftMostNode.getRightSibling().isPresent()) {
-                return true;
-            }
-            return false;
+            return this.i.hasNext() || this.leftMostNode.getRightSibling().isPresent();
         }
 
         @Override
@@ -457,10 +454,11 @@ public class BPlusTree {
             if(!hasNext()) {
                 throw new NoSuchElementException();
             }
-            else if (!this.i.hasNext() && this.leftMostNode.getRightSibling().isPresent()) {
+            while (!this.i.hasNext() && this.leftMostNode.getRightSibling().isPresent()) {
                 this.leftMostNode = this.leftMostNode.getRightSibling().get();
                 this.i = this.leftMostNode.scanAll();
             }
+
             return this.i.next();
 
         }

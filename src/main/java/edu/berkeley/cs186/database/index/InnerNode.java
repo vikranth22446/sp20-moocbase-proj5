@@ -105,8 +105,9 @@ class InnerNode extends BPlusNode {
         if (p.isPresent()) {
             DataBox splitKey = p.get().getFirst();
             int splitIndex = numLessThanEqual(splitKey, this.keys);
-
             this.keys.add(splitIndex, splitKey);
+
+
             this.children.add(splitIndex + 1, p.get().getSecond());
 
             if (2 * this.metadata.getOrder() - this.keys.size() >= 0) {
@@ -153,24 +154,24 @@ class InnerNode extends BPlusNode {
             return Optional.empty();
         }
 
-        LeafNode toBulk = getLeftmostLeaf();
+        /*LeafNode toBulk = getLeftmostLeaf();
         while (toBulk.getRightSibling().isPresent()) {
             toBulk = toBulk.getRightSibling().get();
         }
-
+        */
 
         while (data.hasNext()) {
-            Optional<Pair<DataBox, Long>> ptr = toBulk.bulkLoad(data, fillFactor);
+            Optional<Pair<DataBox, Long>> ptr = getChild(this.children.size()-1).bulkLoad(data, fillFactor);
             if (ptr.isPresent()) {
                 DataBox key = ptr.get().getFirst();
 
                 this.keys.add(key);
                 this.children.add(ptr.get().getSecond());
-
+                /*
                 if (!toBulk.getRightSibling().isPresent()) {
                     return  ptr;
                 }
-                toBulk = toBulk.getRightSibling().get();
+                toBulk = toBulk.getRightSibling().get();*/
 
                 if (2 * this.metadata.getOrder() - this.keys.size() < 0) {
                     List<DataBox> rightKeys = new ArrayList<>();

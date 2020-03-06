@@ -202,8 +202,11 @@ class LeafNode extends BPlusNode {
             return Optional.empty();
         }
 
-        while (this.keys.size() < fillFactor * 2 * this.metadata.getOrder() && data.hasNext()) {
+        while (this.keys.size() < Math.ceil(fillFactor * 2 * this.metadata.getOrder()) && data.hasNext()) {
             Pair<DataBox, RecordId> p = data.next();
+            if (this.keys.contains(p.getFirst())) {
+                throw new BPlusTreeException("Duplicate keys not allowed.");
+            }
             this.keys.add(p.getFirst());
             this.rids.add(p.getSecond());
         }
@@ -214,7 +217,9 @@ class LeafNode extends BPlusNode {
             List<RecordId> rightIds = new ArrayList<>();
 
             Pair<DataBox, RecordId> p = data.next();
-
+            if (this.keys.contains(p.getFirst())) {
+                throw new BPlusTreeException("Duplicate keys not allowed.");
+            }
             rightKeys.add(p.getFirst());
             rightIds.add(p.getSecond());
 

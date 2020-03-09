@@ -32,33 +32,120 @@ class SortMergeOperator extends JoinOperator {
 
     /**
      * An implementation of Iterator that provides an iterator interface for this operator.
-     *    See lecture slides.
-     *
+     * See lecture slides.
+     * <p>
      * Before proceeding, you should read and understand SNLJOperator.java
-     *    You can find it in the same directory as this file.
-     *
+     * You can find it in the same directory as this file.
+     * <p>
      * Word of advice: try to decompose the problem into distinguishable sub-problems.
-     *    This means you'll probably want to add more methods than those given (Once again,
-     *    SNLJOperator.java might be a useful reference).
-     *
+     * This means you'll probably want to add more methods than those given (Once again,
+     * SNLJOperator.java might be a useful reference).
      */
     private class SortMergeIterator extends JoinIterator {
         /**
-        * Some member variables are provided for guidance, but there are many possible solutions.
-        * You should implement the solution that's best for you, using any member variables you need.
-        * You're free to use these member variables, but you're not obligated to.
-        */
+         * Some member variables are provided for guidance, but there are many possible solutions.
+         * You should implement the solution that's best for you, using any member variables you need.
+         * You're free to use these member variables, but you're not obligated to.
+         */
         private BacktrackingIterator<Record> leftIterator;
         private BacktrackingIterator<Record> rightIterator;
         private Record leftRecord;
         private Record nextRecord;
         private Record rightRecord;
         private boolean marked;
+        private Comparator<Record> leftComparator;
+        private Comparator<Record> rightComparator;
 
         private SortMergeIterator() {
             super();
             // TODO(proj3_part1): implement
-            
+
+            this.leftComparator = new LeftRecordComparator();
+            this.rightComparator = new RightRecordComparator();
+
+            SortOperator leftSortOperator = new SortOperator(getTransaction(), getLeftTableName(), this.leftComparator);
+            SortOperator rightSortOperator = new SortOperator(getTransaction(), getRightTableName(), this.rightComparator);
+
+            this.leftIterator = getRecordIterator(leftSortOperator.sort());
+            this.rightIterator = getRecordIterator(rightSortOperator.sort());
+
+            this.nextRecord = null;
+
+            this.leftRecord = leftIterator.hasNext() ? leftIterator.next() : null;
+            this.rightRecord = rightIterator.hasNext() ? rightIterator.next() : null;
+
+            if (rightRecord != null) {
+                rightIterator.markPrev();
+            } else {
+                return;
+            }
+
+            try {
+                fetchNextRecord();
+            } catch (NoSuchElementException e) {
+                this.nextRecord = null;
+            }
+
+
+        }
+
+        private void fetchNextRecord() {
+            this.nextRecord = null;
+
+            while (!hasNext()) {
+                if (!marked) {
+                    if (leftRecord == null || rightRecord == null) {
+                        return;
+                    }
+                    while (leftRecord != null && rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) < 0) {
+                        if (this.leftIterator.hasNext()) {
+                            this.leftRecord = this.leftIterator.next();
+                        } else {
+                            this.leftRecord = null;
+                        }
+                    }
+                    while (leftRecord != null && rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) > 0) {
+                        if (this.rightIterator.hasNext()) {
+                            this.rightRecord = this.rightIterator.next();
+                        } else {
+                            this.rightRecord = null;
+                        }
+                    }
+                    this.rightIterator.markPrev();
+                    marked = true;
+
+                }
+                if (leftRecord != null && rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) == 0) {
+
+                    List<DataBox> leftValues = new ArrayList<>(leftRecord.getValues());
+                    List<DataBox> rightValues = new ArrayList<>(rightRecord.getValues());
+                    leftValues.addAll(rightValues);
+                    this.nextRecord = new Record(leftValues);
+
+                    if (rightIterator.hasNext()) {
+                        rightRecord = rightIterator.next();
+                    } else {
+                        rightRecord = null;
+                    }
+
+                } else {
+                    this.rightIterator.reset();
+                    if (this.rightIterator.hasNext()) {
+                        this.rightRecord = this.rightIterator.next();
+                    } else {
+                        this.rightRecord = null;
+                    }
+
+                    if (this.leftIterator.hasNext()) {
+                        this.leftRecord = this.leftIterator.next();
+                    } else {
+                        this.leftRecord = null;
+                    }
+
+                    marked = false;
+
+                }
+            }
         }
 
         /**
@@ -70,7 +157,7 @@ class SortMergeOperator extends JoinOperator {
         public boolean hasNext() {
             // TODO(proj3_part1): implement
 
-            return false;
+            return this.nextRecord != null;
         }
 
         /**
@@ -83,7 +170,17 @@ class SortMergeOperator extends JoinOperator {
         public Record next() {
             // TODO(proj3_part1): implement
 
-            throw new NoSuchElementException();
+            if (!this.hasNext()) {
+                throw new NoSuchElementException();
+            }
+
+            Record nextRecord = this.nextRecord;
+            try {
+                this.fetchNextRecord();
+            } catch (NoSuchElementException e) {
+                this.nextRecord = null;
+            }
+            return nextRecord;
         }
 
         @Override
@@ -95,7 +192,7 @@ class SortMergeOperator extends JoinOperator {
             @Override
             public int compare(Record o1, Record o2) {
                 return o1.getValues().get(SortMergeOperator.this.getLeftColumnIndex()).compareTo(
-                           o2.getValues().get(SortMergeOperator.this.getLeftColumnIndex()));
+                        o2.getValues().get(SortMergeOperator.this.getLeftColumnIndex()));
             }
         }
 
@@ -103,7 +200,7 @@ class SortMergeOperator extends JoinOperator {
             @Override
             public int compare(Record o1, Record o2) {
                 return o1.getValues().get(SortMergeOperator.this.getRightColumnIndex()).compareTo(
-                           o2.getValues().get(SortMergeOperator.this.getRightColumnIndex()));
+                        o2.getValues().get(SortMergeOperator.this.getRightColumnIndex()));
             }
         }
     }

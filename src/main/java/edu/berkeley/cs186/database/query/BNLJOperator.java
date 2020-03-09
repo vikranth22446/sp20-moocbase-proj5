@@ -89,6 +89,13 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextLeftBlock() {
             // TODO(proj3_part1): implement
+            if (!this.leftIterator.hasNext() && !this.leftRecordIterator.hasNext()) {
+                this.leftRecordIterator = null;
+                this.leftRecord = null;
+            }
+            this.leftRecordIterator = BNLJOperator.this.getBlockIterator(this.getLeftTableName(), this.leftIterator,numBuffers - 2);
+            this.leftRecord = this.leftRecordIterator.next();
+
         }
 
         /**
@@ -96,11 +103,15 @@ class BNLJOperator extends JoinOperator {
          * should be set to a record iterator over the next page of the right relation that
          * has a record in it.
          *
-         * If there are no more pages in the left relation with records, rightRecordIterator
+         * If there are no more pages in the right relation with records, rightRecordIterator
          * should be set to null.
          */
         private void fetchNextRightPage() {
             // TODO(proj3_part1): implement
+            if (!this.rightIterator.hasNext() && !this.rightRecordIterator.hasNext()) {
+                this.rightRecordIterator = null;
+            }
+            this.rightRecordIterator = BNLJOperator.this.getBlockIterator(this.getRightTableName(), this.rightIterator, 1);
         }
 
         /**
@@ -111,6 +122,8 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextRecord() {
             // TODO(proj3_part1): implement
+
+            return;
         }
 
         /**

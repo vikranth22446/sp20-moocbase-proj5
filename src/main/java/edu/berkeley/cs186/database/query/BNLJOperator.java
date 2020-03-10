@@ -36,17 +36,17 @@ class BNLJOperator extends JoinOperator {
         int numLeftPages = getLeftSource().getStats().getNumPages();
         int numRightPages = getRightSource().getStats().getNumPages();
         return ((int) Math.ceil((double) numLeftPages / (double) usableBuffers)) * numRightPages +
-               numLeftPages;
+                numLeftPages;
     }
 
     /**
      * BNLJ: Block Nested Loop Join
-     *  See lecture slides.
-     *
+     * See lecture slides.
+     * <p>
      * An implementation of Iterator that provides an iterator interface for this operator.
-     *
+     * <p>
      * Word of advice: try to decompose the problem into distinguishable sub-problems.
-     *    This means you'll probably want to add more methods than those given.
+     * This means you'll probably want to add more methods than those given.
      */
     private class BNLJIterator extends JoinIterator {
         // Iterator over pages of the left relation
@@ -83,18 +83,25 @@ class BNLJOperator extends JoinOperator {
          * Fetch the next non-empty block of B - 2 pages from the left relation. leftRecordIterator
          * should be set to a record iterator over the next B - 2 pages of the left relation that
          * have a record in them, and leftRecord should be set to the first record in this block.
-         *
+         * <p>
          * If there are no more pages in the left relation with records, both leftRecordIterator
          * and leftRecord should be set to null.
          */
         private void fetchNextLeftBlock() {
             // TODO(proj3_part1): implement
-            if (!this.leftIterator.hasNext() && !this.leftRecordIterator.hasNext()) {
-                this.leftRecordIterator = null;
-                this.leftRecord = null;
+            while (this.leftIterator.hasNext()) {
+
+                this.leftRecordIterator = BNLJOperator.this.getBlockIterator(this.getLeftTableName(), this.leftIterator, numBuffers - 2);
+                if (this.leftRecordIterator.hasNext()) {
+                    this.leftRecord = this.leftRecordIterator.next();
+
+                    this.leftRecordIterator.markPrev();
+                    return;
+                }
+
             }
-            this.leftRecordIterator = BNLJOperator.this.getBlockIterator(this.getLeftTableName(), this.leftIterator,numBuffers - 2);
-            this.leftRecord = this.leftRecordIterator.next();
+            this.leftRecordIterator = null;
+            this.leftRecord = null;
 
         }
 
@@ -102,16 +109,18 @@ class BNLJOperator extends JoinOperator {
          * Fetch the next non-empty page from the right relation. rightRecordIterator
          * should be set to a record iterator over the next page of the right relation that
          * has a record in it.
-         *
+         * <p>
          * If there are no more pages in the right relation with records, rightRecordIterator
          * should be set to null.
          */
         private void fetchNextRightPage() {
             // TODO(proj3_part1): implement
-            if (!this.rightIterator.hasNext() && !this.rightRecordIterator.hasNext()) {
+            if (!this.rightIterator.hasNext()) {
                 this.rightRecordIterator = null;
+            } else {
+                this.rightRecordIterator = BNLJOperator.this.getBlockIterator(this.getRightTableName(), this.rightIterator, 1);
+                this.rightRecordIterator.markNext();
             }
-            this.rightRecordIterator = BNLJOperator.this.getBlockIterator(this.getRightTableName(), this.rightIterator, 1);
         }
 
         /**
@@ -122,14 +131,48 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextRecord() {
             // TODO(proj3_part1): implement
+            if (this.leftRecordIterator == null && this.leftRecord == null) {
+                throw new NoSuchElementException("No new record to fetch");
+            }
+            this.nextRecord = null;
 
-            return;
+            while (!hasNext()) {
+                if (leftRecord != null && this.rightRecordIterator.hasNext()) {
+                    Record rightRecord = rightRecordIterator.next();
+
+                    DataBox leftJoinValue = this.leftRecord.getValues().get(BNLJOperator.this.getLeftColumnIndex());
+                    DataBox rightJoinValue = rightRecord.getValues().get(BNLJOperator.this.getRightColumnIndex());
+                    if (leftJoinValue.equals(rightJoinValue)) {
+                        this.nextRecord = joinRecords(this.leftRecord, rightRecord);
+                    }
+
+                } else if (leftRecord != null && this.leftRecordIterator.hasNext()) {
+                    this.leftRecord = leftRecordIterator.next();
+                    this.rightRecordIterator.reset();
+
+                } else if (!this.leftRecordIterator.hasNext() && this.rightIterator.hasNext()) {
+                    fetchNextRightPage();
+                    this.leftRecordIterator.reset();
+                    this.leftRecord = this.leftRecordIterator.next();
+
+                } else if (this.leftIterator.hasNext()) {
+                    fetchNextLeftBlock();
+                    this.rightIterator.reset();
+                    fetchNextRightPage();
+
+                } else {
+                    break;
+                }
+            }
+
+
         }
 
         /**
          * Helper method to create a joined record from a record of the left relation
          * and a record of the right relation.
-         * @param leftRecord Record from the left relation
+         *
+         * @param leftRecord  Record from the left relation
          * @param rightRecord Record from the right relation
          * @return joined record
          */

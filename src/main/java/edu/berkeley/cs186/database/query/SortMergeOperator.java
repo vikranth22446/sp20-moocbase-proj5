@@ -94,17 +94,19 @@ class SortMergeOperator extends JoinOperator {
 
             while (!hasNext()) {
                 if (!marked) {
-                    if (leftRecord == null || rightRecord == null) {
+                    if (this.leftRecord == null || this.rightRecord == null) {
                         return;
                     }
-                    while (leftRecord != null && rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) < 0) {
+                    while (this.leftRecord != null && this.rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) < 0) {
+
                         if (this.leftIterator.hasNext()) {
                             this.leftRecord = this.leftIterator.next();
                         } else {
                             this.leftRecord = null;
                         }
                     }
-                    while (leftRecord != null && rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) > 0) {
+                    while (this.leftRecord != null && this.rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) > 0) {
+
                         if (this.rightIterator.hasNext()) {
                             this.rightRecord = this.rightIterator.next();
                         } else {
@@ -115,21 +117,22 @@ class SortMergeOperator extends JoinOperator {
                     marked = true;
 
                 }
-                if (leftRecord != null && rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) == 0) {
+                if (this.leftRecord != null && this.rightRecord != null && this.leftComparator.compare(this.leftRecord, this.rightRecord) == 0) {
 
                     List<DataBox> leftValues = new ArrayList<>(leftRecord.getValues());
                     List<DataBox> rightValues = new ArrayList<>(rightRecord.getValues());
                     leftValues.addAll(rightValues);
                     this.nextRecord = new Record(leftValues);
 
-                    if (rightIterator.hasNext()) {
-                        rightRecord = rightIterator.next();
+                    if (this.rightIterator.hasNext()) {
+                        this.rightRecord = this.rightIterator.next();
                     } else {
-                        rightRecord = null;
+                        this.rightRecord = null;
                     }
 
                 } else {
                     this.rightIterator.reset();
+
                     if (this.rightIterator.hasNext()) {
                         this.rightRecord = this.rightIterator.next();
                     } else {

@@ -231,16 +231,50 @@ public class QueryPlan {
         // Pass 1: Iterate through all single tables. For each single table, find
         // the lowest cost QueryOperator to access that table. Construct a mapping
         // of each table name to its lowest cost operator.
+        Map<Set, QueryOperator> pass1Map = new HashMap<>();
+        Map<Set, QueryOperator> prevMap = new HashMap<>();
 
+        Set<String> pass1Set = new LinkedHashSet<>();
+        pass1Set.add(this.startTableName);
+
+        Set<String> prevSet = new LinkedHashSet<>();
+        prevSet.add(this.startTableName);
+
+        pass1Map.put(pass1Set, minCostSingleAccess(this.startTableName));
+        prevMap.put(prevSet, minCostSingleAccess(this.startTableName));
+
+        for (String t: this.joinTableNames) {
+            Set<String> s = new LinkedHashSet<>();
+            s.add(t);
+            pass1Map.put(s, minCostSingleAccess(t));
+
+            Set<String> p = new LinkedHashSet<>();
+            p.add(t);
+            prevMap.put(p, minCostSingleAccess(t));
+        }
 
         // Pass i: On each pass, use the results from the previous pass to find the
         // lowest cost joins with each single table. Repeat until all tables have
         // been joined.
+        for (int i=1; i < this.joinTableNames.size() + 1; i++) {
+            prevMap = minCostJoins(prevMap, pass1Map);
+        }
+
 
         // Get the lowest cost operator from the last pass, add GROUP BY and SELECT
         // operators, and return an iterator on the final operator
+        QueryOperator lowestCostOp = null;
+        for (Set s : prevMap.keySet()) {
+            if (lowestCostOp == null || prevMap.get(s).getIOCost() < lowestCostOp.getIOCost()) {
+                lowestCostOp = prevMap.get(s);
+            }
+        }
+        this.finalOperator = lowestCostOp;
 
-        return this.executeNaive(); // TODO(proj3_part2): Replace this!!! Allows you to test intermediate functionality
+        this.addGroupBy();
+        this.addProjects();
+
+        return this.finalOperator.execute(); // TODO(proj3_part2): Replace this!!! Allows you to test intermediate functionality
     }
 
     /**
@@ -336,7 +370,7 @@ public class QueryPlan {
 
         // 1. Find the cost of a sequential scan of the table
         minOp = new SequentialScanOperator(this.transaction, table);
-        int minCost = minOp.estimateIOCost();
+        int minCost = minOp.getIOCost();
 
         // 2. For each eligible index column, find the cost of an index scan of the
         // table and retain the lowest cost operator
@@ -346,8 +380,8 @@ public class QueryPlan {
         for (Integer i : indexColumns) {
             IndexScanOperator indexScan = new IndexScanOperator(this.transaction, table, this.selectColumnNames.get(i),
                                     this.selectOperators.get(i), this.selectDataBoxes.get(i));
-            if (minCost > indexScan.estimateIOCost()) {
-                minCost = indexScan.estimateIOCost();
+            if (minCost > indexScan.getIOCost()) {
+                minCost = indexScan.getIOCost();
                 minOp = new IndexScanOperator(this.transaction, table, this.selectColumnNames.get(i),
                        this.selectOperators.get(i), this.selectDataBoxes.get(i));
                 index = i;
@@ -358,7 +392,7 @@ public class QueryPlan {
         // 3. Push down SELECT predicates that apply to this table and that were not
         // used for an index scan
         if (minOp.isSequentialScan()) {
-            minOp = this.addEligibleSelections(minOp, this.selectColumnNames.size() + 1);
+            minOp = this.addEligibleSelections(minOp, Integer.MAX_VALUE);
         } else {
             minOp = this.addEligibleSelections(minOp, index);
         }
@@ -434,6 +468,56 @@ public class QueryPlan {
          * --- Then given the operator, use minCostJoinType to calculate the cheapest join with that
          * and the previously joined tables.
          */
+        for (Set s : prevMap.keySet()) {
+            QueryOperator minJType = null;
+            String tableToAdd = "";
+        
+
+            for (int i=0; i < this.joinTableNames.size(); i++) {
+                String[] joinLeftName = this.getJoinLeftColumnNameByIndex(i);
+                String[] joinRightName = this.getJoinRightColumnNameByIndex(i);
+                QueryOperator rightOp;
+                QueryOperator leftOp;
+
+
+                if (s.contains(joinLeftName[0]) && !s.contains(joinRightName[0])) {
+                    leftOp = prevMap.get(s);
+
+                    Set<String> table = new LinkedHashSet<>();
+                    table.add(joinRightName[0]);
+                    rightOp = pass1Map.get(table);
+
+                    QueryOperator candidateJType = this.minCostJoinType(leftOp, rightOp, joinLeftName[1], joinRightName[1]);
+                    if (minJType == null || candidateJType.getIOCost() < minJType.getIOCost()) {
+                        minJType = candidateJType;
+                        tableToAdd = joinRightName[0];
+                    }
+
+                } else if (!s.contains(joinLeftName[0]) && s.contains(joinRightName[0])) {
+                    leftOp = prevMap.get(s);
+
+                    Set<String> table = new LinkedHashSet<>();
+                    table.add(joinLeftName[0]);
+                    rightOp = pass1Map.get(table);
+
+                    QueryOperator candidateJType = this.minCostJoinType(leftOp, rightOp, joinRightName[1], joinLeftName[1]);
+                    if (minJType == null || candidateJType.getIOCost() < minJType.getIOCost()) {
+                        minJType = candidateJType;
+                        tableToAdd = joinLeftName[0];
+                    }
+
+                }
+
+            }
+            Set<String> n = new LinkedHashSet<>(s);
+            n.add(tableToAdd);
+
+            if (map.containsKey(n) && map.get(n).getIOCost() > minJType.getIOCost()) {
+                map.put(n, minJType);
+            } else if (!map.containsKey(n)) {
+                map.put(n, minJType);
+            }
+        }
 
         return map;
     }

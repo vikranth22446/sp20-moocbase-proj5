@@ -232,6 +232,7 @@ public class QueryPlan {
         // the lowest cost QueryOperator to access that table. Construct a mapping
         // of each table name to its lowest cost operator.
 
+
         // Pass i: On each pass, use the results from the previous pass to find the
         // lowest cost joins with each single table. Repeat until all tables have
         // been joined.
@@ -334,12 +335,33 @@ public class QueryPlan {
         // TODO(proj3_part2): implement
 
         // 1. Find the cost of a sequential scan of the table
+        minOp = new SequentialScanOperator(this.transaction, table);
+        int minCost = minOp.estimateIOCost();
 
         // 2. For each eligible index column, find the cost of an index scan of the
         // table and retain the lowest cost operator
+        List<Integer> indexColumns = this.getEligibleIndexColumns(table);
+        int index = 0;
+
+        for (Integer i : indexColumns) {
+            IndexScanOperator indexScan = new IndexScanOperator(this.transaction, table, this.selectColumnNames.get(i),
+                                    this.selectOperators.get(i), this.selectDataBoxes.get(i));
+            if (minCost > indexScan.estimateIOCost()) {
+                minCost = indexScan.estimateIOCost();
+                minOp = new IndexScanOperator(this.transaction, table, this.selectColumnNames.get(i),
+                       this.selectOperators.get(i), this.selectDataBoxes.get(i));
+                index = i;
+            }
+        }
+
 
         // 3. Push down SELECT predicates that apply to this table and that were not
         // used for an index scan
+        if (minOp.isSequentialScan()) {
+            minOp = this.addEligibleSelections(minOp, this.selectColumnNames.size() + 1);
+        } else {
+            minOp = this.addEligibleSelections(minOp, index);
+        }
 
         return minOp;
     }

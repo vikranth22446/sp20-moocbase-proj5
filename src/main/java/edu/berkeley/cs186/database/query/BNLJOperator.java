@@ -131,7 +131,7 @@ class BNLJOperator extends JoinOperator {
          */
         private void fetchNextRecord() {
             // TODO(proj3_part1): implement
-            if (this.leftRecordIterator == null && this.leftRecord == null) {
+            if ((this.leftRecordIterator == null && this.leftRecord == null) || this.rightRecordIterator == null) {
                 throw new NoSuchElementException("No new record to fetch");
             }
             this.nextRecord = null;
@@ -146,16 +146,17 @@ class BNLJOperator extends JoinOperator {
                         this.nextRecord = joinRecords(this.leftRecord, rightRecord);
                     }
 
-                } else if (leftRecord != null && this.leftRecordIterator.hasNext()) {
+                } else if (!this.rightRecordIterator.hasNext() && this.leftRecordIterator.hasNext()) {
                     this.leftRecord = leftRecordIterator.next();
                     this.rightRecordIterator.reset();
 
-                } else if (!this.leftRecordIterator.hasNext() && this.rightIterator.hasNext()) {
+                } else if (!this.leftRecordIterator.hasNext() && !this.rightRecordIterator.hasNext() && this.rightIterator.hasNext()) {
                     fetchNextRightPage();
                     this.leftRecordIterator.reset();
                     this.leftRecord = this.leftRecordIterator.next();
 
-                } else if (this.leftIterator.hasNext()) {
+                } else if (this.leftIterator.hasNext() && !this.rightRecordIterator.hasNext() && !this.rightIterator.hasNext() &&
+                        !this.leftRecordIterator.hasNext()) {
                     fetchNextLeftBlock();
                     this.rightIterator.reset();
                     fetchNextRightPage();

@@ -104,7 +104,9 @@ public class SortOperator {
             runIterators.add(r.iterator());
         }
         for (Iterator<Record> i : runIterators) {
-            pQueue.add(new Pair(i.next(), runIterators.indexOf(i)));
+            if (i.hasNext()) {
+                pQueue.add(new Pair(i.next(), runIterators.indexOf(i)));
+            }
         }
         while (hasNextIterators(runIterators) || pQueue.size() != 0) {
             Pair<Record, Integer> smallest = pQueue.poll();
@@ -142,6 +144,9 @@ public class SortOperator {
         if (runs.isEmpty()) {
             return Collections.emptyList();
         }
+        if (runs.size() == 1) {
+            return runs;
+        }
         List<Run> mergedRuns = new ArrayList<>();
         for (int i=0; i<runs.size()/(this.numBuffers-1) * (this.numBuffers-1); i += this.numBuffers-1) {
             mergedRuns.add(mergeSortedRuns(runs.subList(i, i + numBuffers-1)));
@@ -161,14 +166,22 @@ public class SortOperator {
     public String sort() {
         // TODO(proj3_part1): implement
         BacktrackingIterator<Page> pageIterator = this.transaction.getPageIterator(this.tableName);
+        if (!pageIterator.hasNext()) {
+            return this.tableName;
+        }
+      
         List <Run> mergeSortedRuns = new ArrayList<>();
 
         while (pageIterator.hasNext()) {
             mergeSortedRuns.add(sortRun(createRunFromIterator(this.transaction.getBlockIterator(this.tableName, pageIterator, numBuffers))));
         }
 
-        while (mergeSortedRuns.size() != 1) {
+        while (mergeSortedRuns.size() > 1) {
             mergeSortedRuns = mergePass(mergeSortedRuns);
+        }
+
+        if (mergeSortedRuns.size() < 1) {
+            return this.tableName;
         }
 
         return mergeSortedRuns.get(0).tableName(); // TODO(proj3_part1): replace this!

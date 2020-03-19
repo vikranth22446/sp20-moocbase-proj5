@@ -471,7 +471,7 @@ public class QueryPlan {
         for (Set s : prevMap.keySet()) {
             QueryOperator minJType = null;
             String tableToAdd = "";
-        
+
 
             for (int i=0; i < this.joinTableNames.size(); i++) {
                 String[] joinLeftName = this.getJoinLeftColumnNameByIndex(i);

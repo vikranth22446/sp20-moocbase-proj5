@@ -532,4 +532,64 @@ public class TestJoinOperator {
             assertEquals("too few records", 4 * 200 * 200, count);
         }
     }
+    @Test
+    public void testNonEmptyWithEmptyBNLJ() {
+        d.setWorkMem(3);
+        try (Transaction transaction = d.beginTransaction()) {
+            setSourceOperators(
+                    new TestSourceOperator(),
+                    new TestSourceOperator(0),
+                    transaction
+            );
+
+            JoinOperator joinOperator = new BNLJOperator(leftSourceOperator, rightSourceOperator, "int", "int",
+                    transaction.getTransactionContext());
+
+            Iterator<Record> outputIterator = joinOperator.iterator();
+
+            assertFalse("too many records", outputIterator.hasNext());
+
+        }
+    }
+    @Test
+    public void testNonEmptyWithEmptySMJ() {
+        d.setWorkMem(3);
+        try (Transaction transaction = d.beginTransaction()) {
+            setSourceOperators(
+                    new TestSourceOperator(),
+                    new TestSourceOperator(0),
+                    transaction
+            );
+
+            JoinOperator joinOperator = new SortMergeOperator(leftSourceOperator, rightSourceOperator, "int", "int",
+                    transaction.getTransactionContext());
+
+            Iterator<Record> outputIterator = joinOperator.iterator();
+
+            assertFalse("too many records", outputIterator.hasNext());
+
+        }
+    }
+    @Test
+    public void testEmptyWithEmptySMJ() {
+        d.setWorkMem(3);
+        try (Transaction transaction = d.beginTransaction()) {
+            setSourceOperators(
+                    new TestSourceOperator(0),
+                    new TestSourceOperator(0),
+                    transaction
+            );
+
+            JoinOperator joinOperator = new SortMergeOperator(leftSourceOperator, rightSourceOperator, "int", "int",
+                    transaction.getTransactionContext());
+
+            Iterator<Record> outputIterator = joinOperator.iterator();
+
+            assertFalse("too many records", outputIterator.hasNext());
+
+        }
+    }
+
+
+
 }

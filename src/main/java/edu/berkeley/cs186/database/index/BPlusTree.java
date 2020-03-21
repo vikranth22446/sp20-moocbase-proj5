@@ -137,13 +137,12 @@ public class BPlusTree {
     public Optional<RecordId> get(DataBox key) {
         typecheck(key);
         // TODO(proj2): implement
-<<<<<<< HEAD
+
         LeafNode potential = this.root.get(key);
 
         // TODO(proj4_part2): B+ tree locking
-=======
+
         // TODO(proj4_part3): B+ tree locking
->>>>>>> d3f1c58acb536e37b4814137e297ed49de67e027
 
         return potential.getKey(key);
     }
@@ -227,7 +226,7 @@ public class BPlusTree {
     public Iterator<RecordId> scanGreaterEqual(DataBox key) {
         typecheck(key);
         // TODO(proj2): Return a BPlusTreeIterator.
-<<<<<<< HEAD
+
         // TODO(proj4_part2): B+ tree locking
         Optional<RecordId> rid = get(key);
         if (rid.isPresent()) {
@@ -236,11 +235,10 @@ public class BPlusTree {
         } else {
             return Collections.emptyIterator();
         }
-=======
+
         // TODO(proj4_part3): B+ tree locking
 
-        return Collections.emptyIterator();
->>>>>>> d3f1c58acb536e37b4814137e297ed49de67e027
+
     }
 
     /**
@@ -255,7 +253,7 @@ public class BPlusTree {
     public void put(DataBox key, RecordId rid) {
         typecheck(key);
         // TODO(proj2): implement
-<<<<<<< HEAD
+
         Optional<Pair<DataBox, Long>> result = this.root.put(key, rid);
         if (result.isPresent()) {
             Pair<DataBox,Long> ptr = result.get();
@@ -272,9 +270,8 @@ public class BPlusTree {
             this.updateRoot(newRoot);
         }
         // TODO(proj4_part2): B+ tree locking
-=======
+
         // TODO(proj4_part3): B+ tree locking
->>>>>>> d3f1c58acb536e37b4814137e297ed49de67e027
 
 
     }
@@ -298,7 +295,7 @@ public class BPlusTree {
      */
     public void bulkLoad(Iterator<Pair<DataBox, RecordId>> data, float fillFactor) {
         // TODO(proj2): implement
-<<<<<<< HEAD
+
 
         if (!this.root.toSexp().equals("()")) {
             throw new BPlusTreeException("Tree is not empty");

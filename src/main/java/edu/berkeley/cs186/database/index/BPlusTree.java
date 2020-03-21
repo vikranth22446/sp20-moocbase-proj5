@@ -86,7 +86,7 @@ public class BPlusTree {
      * All pages allocated on the given partition are serializations of inner and leaf nodes.
      */
     public BPlusTree(BufferManager bufferManager, BPlusTreeMetadata metadata, LockContext lockContext) {
-        // TODO(proj4_part2): B+ tree locking
+        // TODO(proj4_part3): B+ tree locking
 
         // Sanity checks.
         if (metadata.getOrder() < 0) {
@@ -137,9 +137,13 @@ public class BPlusTree {
     public Optional<RecordId> get(DataBox key) {
         typecheck(key);
         // TODO(proj2): implement
+<<<<<<< HEAD
         LeafNode potential = this.root.get(key);
 
         // TODO(proj4_part2): B+ tree locking
+=======
+        // TODO(proj4_part3): B+ tree locking
+>>>>>>> d3f1c58acb536e37b4814137e297ed49de67e027
 
         return potential.getKey(key);
     }
@@ -153,7 +157,7 @@ public class BPlusTree {
      */
     public Iterator<RecordId> scanEqual(DataBox key) {
         typecheck(key);
-        // TODO(proj4_part2): B+ tree locking
+        // TODO(proj4_part3): B+ tree locking
 
         Optional<RecordId> rid = get(key);
         if (rid.isPresent()) {
@@ -192,7 +196,7 @@ public class BPlusTree {
      */
     public Iterator<RecordId> scanAll() {
         // TODO(proj2): Return a BPlusTreeIterator.
-        // TODO(proj4_part2): B+ tree locking
+        // TODO(proj4_part3): B+ tree locking
 
         return new BPlusTreeIterator(this.root.getLeftmostLeaf(), this.root.getLeftmostLeaf().scanAll());
     }
@@ -223,6 +227,7 @@ public class BPlusTree {
     public Iterator<RecordId> scanGreaterEqual(DataBox key) {
         typecheck(key);
         // TODO(proj2): Return a BPlusTreeIterator.
+<<<<<<< HEAD
         // TODO(proj4_part2): B+ tree locking
         Optional<RecordId> rid = get(key);
         if (rid.isPresent()) {
@@ -231,6 +236,11 @@ public class BPlusTree {
         } else {
             return Collections.emptyIterator();
         }
+=======
+        // TODO(proj4_part3): B+ tree locking
+
+        return Collections.emptyIterator();
+>>>>>>> d3f1c58acb536e37b4814137e297ed49de67e027
     }
 
     /**
@@ -245,6 +255,7 @@ public class BPlusTree {
     public void put(DataBox key, RecordId rid) {
         typecheck(key);
         // TODO(proj2): implement
+<<<<<<< HEAD
         Optional<Pair<DataBox, Long>> result = this.root.put(key, rid);
         if (result.isPresent()) {
             Pair<DataBox,Long> ptr = result.get();
@@ -261,6 +272,9 @@ public class BPlusTree {
             this.updateRoot(newRoot);
         }
         // TODO(proj4_part2): B+ tree locking
+=======
+        // TODO(proj4_part3): B+ tree locking
+>>>>>>> d3f1c58acb536e37b4814137e297ed49de67e027
 
 
     }
@@ -284,6 +298,7 @@ public class BPlusTree {
      */
     public void bulkLoad(Iterator<Pair<DataBox, RecordId>> data, float fillFactor) {
         // TODO(proj2): implement
+<<<<<<< HEAD
 
         if (!this.root.toSexp().equals("()")) {
             throw new BPlusTreeException("Tree is not empty");
@@ -309,6 +324,9 @@ public class BPlusTree {
 
         // TODO(proj4_part2): B+ tree locking
 
+        // TODO(proj4_part3): B+ tree locking
+
+
 
     }
 
@@ -326,8 +344,12 @@ public class BPlusTree {
     public void remove(DataBox key) {
         typecheck(key);
         // TODO(proj2): implement
+
         this.root.remove(key);
         // TODO(proj4_part2): B+ tree locking
+
+        // TODO(proj4_part3): B+ tree locking
+
 
 
     }
@@ -338,7 +360,7 @@ public class BPlusTree {
      * more information.
      */
     public String toSexp() {
-        // TODO(proj4_part2): B+ tree locking
+        // TODO(proj4_part3): B+ tree locking
         return root.toSexp();
     }
 
@@ -355,7 +377,7 @@ public class BPlusTree {
      * to create a PDF of the tree.
      */
     public String toDot() {
-        // TODO(proj4_part2): B+ tree locking
+        // TODO(proj4_part3): B+ tree locking
         List<String> strings = new ArrayList<>();
         strings.add("digraph g {" );
         strings.add("  node [shape=record, height=0.1];");

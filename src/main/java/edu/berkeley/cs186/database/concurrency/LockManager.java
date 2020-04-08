@@ -228,6 +228,9 @@ public class LockManager {
 
                 List<Lock> locks = new ArrayList<>();
                 for (ResourceName rname : releaseLocks) {
+                    if (getLockType(transaction, rname) == LockType.NL) {
+                        throw new NoLockHeldException("No lock on rname is held by TRANSACTION");
+                    }
                     locks.add(new Lock(rname, getLockType(transaction, rname), transaction.getTransNum()));
                 }
 

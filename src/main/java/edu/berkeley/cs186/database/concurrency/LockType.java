@@ -88,7 +88,7 @@ public enum LockType {
         switch (required) {
             case S: return substitute == S || substitute == X || substitute == SIX;
             case X: return substitute == X;
-            case IS: return substitute == IS || substitute == S || substitute == X || substitute == SIX;
+            case IS: return substitute == IS || substitute == S || substitute == X || substitute == SIX || substitute == IX;
             case IX: return substitute == IX || substitute == X;
             case SIX: return substitute == SIX || substitute == X;
             case NL: return true;

@@ -199,12 +199,16 @@ public class LockContext {
         }
         if (newLockType == LockType.SIX) {
             List<ResourceName> releaseNames = this.sisDescendants(transaction);
+            releaseNames.add(this.getResourceName());
+
             for (ResourceName r : releaseNames) {
-                this.lockman.release(transaction, r);
-                if (fromResourceName(this.lockman, r).parentContext() == this) {
-                    this.numChildLocks.put(transaction.getTransNum(), this.numChildLocks.get(transaction.getTransNum()) - 1);
+                if (LockContext.fromResourceName(this.lockman, r).parentContext() != null) {
+                    LockContext parent = LockContext.fromResourceName(this.lockman, r).parentContext();
+                    parent.numChildLocks.put(transaction.getTransNum(), parent.numChildLocks.get(transaction.getTransNum()) - 1);
                 }
             }
+            this.lockman.acquireAndRelease(transaction, this.getResourceName(), newLockType, releaseNames);
+            return;
         }
         this.lockman.promote(transaction, this.getResourceName(), newLockType);
     }
@@ -248,6 +252,7 @@ public class LockContext {
                releaseLocks.add(l.name);
             }
         }
+        releaseLocks.add(this.getResourceName());
         if (this.getExplicitLockType(transaction) == LockType.IS) {
             this.lockman.acquireAndRelease(transaction, this.getResourceName(), LockType.S, releaseLocks);
         } else {

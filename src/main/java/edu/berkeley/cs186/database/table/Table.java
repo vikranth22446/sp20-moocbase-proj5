@@ -455,7 +455,7 @@ public class Table implements BacktrackingIterable<Record> {
     // Iterators /////////////////////////////////////////////////////////////////
     public BacktrackingIterator<RecordId> ridIterator() {
         // TODO(proj4_part3): reduce locking overhead for table scans
-
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.S);
         BacktrackingIterator<Page> iter = heapFile.iterator();
         return new ConcatBacktrackingIterator<>(new PageIterator(iter, false));
     }

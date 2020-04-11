@@ -2,9 +2,6 @@ package edu.berkeley.cs186.database.concurrency;
 // If you see this line, you have successfully pulled the latest changes from the skeleton for proj4!
 import edu.berkeley.cs186.database.TransactionContext;
 
-import java.rmi.server.LogStream;
-import java.util.*;
-
 /**
  * LockUtil is a declarative layer which simplifies multigranularity lock acquisition
  * for the user (you, in the second half of Part 2). Generally speaking, you should use LockUtil

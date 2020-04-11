@@ -119,6 +119,7 @@ public class Table implements BacktrackingIterable<Record> {
      */
     public Table(String name, Schema schema, HeapFile heapFile, LockContext lockContext) {
         // TODO(proj4_part3): table locking code
+        LockUtil.ensureSufficientLockHeld(lockContext, LockType.X);
 
         this.name = name;
         this.heapFile = heapFile;
@@ -315,9 +316,11 @@ public class Table implements BacktrackingIterable<Record> {
         // TODO(proj4_part3): modify for smarter locking
 
         validateRecordId(rid);
+        LockUtil.ensureSufficientLockHeld(lockContext.childContext(rid.getPageNum()), LockType.X);
 
         Record newRecord = schema.verify(values);
         Record oldRecord = getRecord(rid);
+
 
         Page page = fetchPage(rid.getPageNum());
         try {
@@ -341,6 +344,7 @@ public class Table implements BacktrackingIterable<Record> {
 
         validateRecordId(rid);
 
+        LockUtil.ensureSufficientLockHeld(lockContext.childContext(rid.getPageNum()), LockType.X);
         Page page = fetchPage(rid.getPageNum());
         try {
             Record record = getRecord(rid);

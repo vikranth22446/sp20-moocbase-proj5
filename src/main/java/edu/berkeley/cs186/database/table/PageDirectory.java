@@ -120,6 +120,7 @@ public class PageDirectory implements HeapFile {
         }
 
         Page page = this.firstHeader.loadPageWithSpace(requiredSpace);
+        LockUtil.ensureSufficientLockHeld(lockContext.childContext(page.getPageNum()), LockType.X);
 
         return new DataPage(pageDirectoryId, page);
     }

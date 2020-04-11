@@ -1055,7 +1055,19 @@ public class Database implements AutoCloseable {
         @Override
         public void close() {
             // TODO(proj4_part3): release locks held by the transaction
-            return;
+            List<Lock> transactionLocks = lockManager.getLocks(this);
+            while(transactionLocks.iterator().hasNext()) {
+                Iterator<Lock> it = transactionLocks.iterator();
+                while (it.hasNext()) {
+                    Lock nextLock = it.next();
+                    LockContext ctx = LockContext.fromResourceName(lockManager, nextLock.name);
+                    if (ctx.saturation(this) == 0.0) {
+                        ctx.release(this);
+                        it.remove();
+                    }
+
+                }
+            }
         }
 
         @Override

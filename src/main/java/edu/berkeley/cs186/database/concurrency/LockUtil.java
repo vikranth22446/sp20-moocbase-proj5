@@ -32,6 +32,14 @@ public class LockUtil {
             return;
         }
         if (lockContext.parentContext() != null) {
+            LockContext parent = lockContext.parentContext();
+            if (parent.isAutoEscalateEnabled() && parent.saturation(transaction) >= 0.2 && parent.capacity() >= 10) {
+                parent.escalate(transaction);
+                ensureSufficientLockHeld(lockContext, lockType);
+                return;
+            }
+        }
+        if (lockContext.parentContext() != null) {
             checkAncestors(transaction, lockContext.parentContext(), lockType);
         }
         acquireLock(transaction, lockContext, lockType);
@@ -68,6 +76,10 @@ public class LockUtil {
             }
         } else if (lockType == LockType.X) {
             if (lockContext.getExplicitLockType(transaction) == LockType.NL) {
+                LockContext parent = lockContext.parentContext();
+                if (parent != null && parent.getExplicitLockType(transaction) == LockType.S) {
+                    parent.promote(transaction, LockType.SIX);
+                }
                 lockContext.acquire(transaction, lockType);
             } else if (lockContext.getExplicitLockType(transaction) == LockType.S){
                 lockContext.escalate(transaction);

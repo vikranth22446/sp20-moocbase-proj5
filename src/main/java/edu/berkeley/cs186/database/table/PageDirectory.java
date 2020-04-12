@@ -91,6 +91,8 @@ public class PageDirectory implements HeapFile {
         this.emptyPageMetadataSize = emptyPageMetadataSize;
         this.lockContext = lockContext;
         this.firstHeader = new HeaderPage(pageNum, 0, true);
+
+        this.lockContext.capacity(getNumDataPages());
     }
 
     @Override
@@ -370,6 +372,7 @@ public class PageDirectory implements HeapFile {
                 // no space on this header page, try next one
                 return this.nextPage.loadPageWithSpace(requiredSpace);
             } finally {
+                lockContext.capacity(getNumDataPages());
                 this.page.unpin();
             }
         }

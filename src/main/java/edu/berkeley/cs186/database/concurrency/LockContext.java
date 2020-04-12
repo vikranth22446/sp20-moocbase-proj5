@@ -40,6 +40,8 @@ public class LockContext {
     // Whether or not any new child LockContexts should be marked readonly.
     protected boolean childLocksDisabled;
 
+    protected boolean autoEscalateEnabled;
+
     public LockContext(LockManager lockman, LockContext parent, Pair<String, Long> name) {
         this(lockman, parent, name, false);
     }
@@ -58,6 +60,16 @@ public class LockContext {
         this.capacity = -1;
         this.children = new ConcurrentHashMap<>();
         this.childLocksDisabled = readonly;
+
+        this.autoEscalateEnabled = true;
+    }
+
+    public boolean isAutoEscalateEnabled() {
+        return this.autoEscalateEnabled;
+    }
+
+    public void setAutoEscalateEnabled(boolean val) {
+        this.autoEscalateEnabled = val;
     }
 
     /**
@@ -112,6 +124,7 @@ public class LockContext {
         if (this.parentContext() != null) {
             LockType parentLock = this.lockman.getLockType(transaction, this.parentContext().getResourceName());
             if (!LockType.canBeParentLock(parentLock, lockType)) {
+                System.out.println(parentLock);
                 throw new InvalidLockException("Request is invalid");
             }
         }
@@ -253,6 +266,14 @@ public class LockContext {
             }
         }
         releaseLocks.add(this.getResourceName());
+
+        for (ResourceName r : releaseLocks) {
+            if (LockContext.fromResourceName(this.lockman, r).parentContext() != null) {
+                LockContext parent = LockContext.fromResourceName(this.lockman, r).parentContext();
+                parent.numChildLocks.put(transaction.getTransNum(), parent.numChildLocks.get(transaction.getTransNum()) - 1);
+            }
+        }
+
         if (this.getExplicitLockType(transaction) == LockType.IS) {
             this.lockman.acquireAndRelease(transaction, this.getResourceName(), LockType.S, releaseLocks);
         } else {

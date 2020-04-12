@@ -124,7 +124,6 @@ public class LockContext {
         if (this.parentContext() != null) {
             LockType parentLock = this.lockman.getLockType(transaction, this.parentContext().getResourceName());
             if (!LockType.canBeParentLock(parentLock, lockType)) {
-                System.out.println(parentLock);
                 throw new InvalidLockException("Request is invalid");
             }
         }

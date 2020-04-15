@@ -214,6 +214,9 @@ public class LockManager {
         // you will have to write some code outside the synchronized block to avoid locking up
         // the entire lock manager when a transaction is blocked. You are also allowed to
         // move the synchronized block elsewhere if you wish.
+        if (transaction == null) {
+            return;
+        }
         boolean shouldBlock = false;
         synchronized (this) {
             if (getLockType(transaction, name) == lockType) {
@@ -276,6 +279,9 @@ public class LockManager {
         // you will have to write some code outside the synchronized block to avoid locking up
         // the entire lock manager when a transaction is blocked. You are also allowed to
         // move the synchronized block elsewhere if you wish.
+        if (transaction == null) {
+            return;
+        }
         boolean shouldBlock = false;
         synchronized (this) {
             if (getLockType(transaction, name) == lockType) {
@@ -316,6 +322,9 @@ public class LockManager {
     throws NoLockHeldException {
         // TODO(proj4_part1): implement
         // You may modify any part of this method.
+        if (transaction == null) {
+            return;
+        }
         synchronized (this) {
             if (getLockType(transaction, name) == LockType.NL) {
                 throw new NoLockHeldException("No lock on NAME is held by TRANSACTION");
@@ -358,6 +367,9 @@ public class LockManager {
     throws DuplicateLockRequestException, NoLockHeldException, InvalidLockException {
         // TODO(proj4_part1): implement
         // You may modify any part of this method.
+        if (transaction == null) {
+            return;
+        }
         boolean shouldBlock = false;
         synchronized (this) {
             if (getLockType(transaction, name) == newLockType) {
@@ -390,6 +402,9 @@ public class LockManager {
      */
     public synchronized LockType getLockType(TransactionContext transaction, ResourceName name) {
         // TODO(proj4_part1): implement
+        if (transaction == null) {
+            return LockType.NL;
+        }
         if (!resourceEntries.containsKey(name)) {
             return LockType.NL;
         }

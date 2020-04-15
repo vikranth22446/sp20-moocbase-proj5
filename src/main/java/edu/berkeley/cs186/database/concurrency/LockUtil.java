@@ -39,6 +39,7 @@ public class LockUtil {
                 return;
             }
         }
+
         if (lockContext.parentContext() != null) {
             checkAncestors(transaction, lockContext.parentContext(), lockType);
         }

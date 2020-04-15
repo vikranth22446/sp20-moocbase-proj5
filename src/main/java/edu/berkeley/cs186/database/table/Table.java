@@ -149,6 +149,7 @@ public class Table implements BacktrackingIterable<Record> {
         }
 
         this.lockContext = lockContext;
+        this.enableAutoEscalate();
     }
 
     // Accessors /////////////////////////////////////////////////////////////////

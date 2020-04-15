@@ -61,7 +61,7 @@ public class LockContext {
         this.children = new ConcurrentHashMap<>();
         this.childLocksDisabled = readonly;
 
-        this.autoEscalateEnabled = true;
+        this.autoEscalateEnabled = false;
     }
 
     public boolean isAutoEscalateEnabled() {
@@ -107,6 +107,9 @@ public class LockContext {
     public void acquire(TransactionContext transaction, LockType lockType)
     throws InvalidLockException, DuplicateLockRequestException {
         // TODO(proj4_part2): implement
+        if (transaction == null) {
+            return;
+        }
         if (this.readonly) {
             throw new UnsupportedOperationException("Context is readonly");
         }
@@ -152,6 +155,9 @@ public class LockContext {
     public void release(TransactionContext transaction)
     throws NoLockHeldException, InvalidLockException {
         // TODO(proj4_part2): implement
+        if (transaction == null) {
+            return;
+        }
         if (this.readonly) {
             throw new UnsupportedOperationException("Context is readonly");
         }
@@ -196,6 +202,9 @@ public class LockContext {
     public void promote(TransactionContext transaction, LockType newLockType)
     throws DuplicateLockRequestException, NoLockHeldException, InvalidLockException {
         // TODO(proj4_part2): implement
+        if (transaction == null) {
+            return;
+        }
         LockType lock = this.lockman.getLockType(transaction, this.getResourceName());
         if (this.readonly) {
             throw new UnsupportedOperationException("Context is readonly");
@@ -248,6 +257,9 @@ public class LockContext {
      */
     public void escalate(TransactionContext transaction) throws NoLockHeldException {
         // TODO(proj4_part2): implement
+        if (transaction == null) {
+            return;
+        }
         if (this.readonly) {
             throw new UnsupportedOperationException("Context is readonly");
         }

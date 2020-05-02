@@ -8,9 +8,7 @@ import edu.berkeley.cs186.database.concurrency.LockType;
 import edu.berkeley.cs186.database.concurrency.LockUtil;
 import edu.berkeley.cs186.database.io.DiskSpaceManager;
 import edu.berkeley.cs186.database.memory.BufferManager;
-import org.omg.Messaging.SYNC_WITH_TRANSPORT;
 
-import java.lang.reflect.Parameter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -177,7 +175,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
         prevLsn = lastRecord.getPrevLSN();
 
         // The following case is sketch https://piazza.com/class/k5ecyhh3xdw1dd?cid=901_f26 following this
-        if(lastRecord.getUndoNextLSN().isPresent() && lastRecord.getUndoNextLSN().get() <= stopLsn) {
+        if (lastRecord.getUndoNextLSN().isPresent() && lastRecord.getUndoNextLSN().get() <= stopLsn) {
             return lastLSN;
         }
 
@@ -185,7 +183,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
             lastRecord = logManager.fetchLogRecord(prevLsn.get());
 
             // The following case is sketch https://piazza.com/class/k5ecyhh3xdw1dd?cid=901_f26 following this
-            if(lastRecord.getUndoNextLSN().isPresent() && lastRecord.getUndoNextLSN().get() <= stopLsn) {
+            if (lastRecord.getUndoNextLSN().isPresent() && lastRecord.getUndoNextLSN().get() <= stopLsn) {
                 break;
             }
 
@@ -683,8 +681,30 @@ public class ARIESRecoveryManager implements RecoveryManager {
         MasterLogRecord masterRecord = (MasterLogRecord) record;
         // Get start checkpoint LSN
         long LSN = masterRecord.lastCheckpointLSN;
+        Iterator<LogRecord> iter = logManager.scanFrom(LSN);
+        while (iter.hasNext()) {
+            LogRecord nextRecord = iter.next();
 
+            if (record.getType() == LogType.ABORT_TRANSACTION || record.getType() == LogType.COMMIT_TRANSACTION ||
+                    record.getType() == LogType.END_TRANSACTION) {
+                Transaction xact = transactionTable.get(record.getTransNum().get()).transaction;
+
+                if (record.getType() == LogType.END_TRANSACTION) {
+                    xact.cleanup();
+                    end(record.getTransNum().get());
+                } else if (record.getType() == LogType.ABORT_TRANSACTION) {
+                    xact.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                } else if (record.getType() == LogType.COMMIT_TRANSACTION) {
+                    xact.setStatus(Transaction.Status.COMMITTING);
+                }
+
+
+            }
+
+
+        }
         // TODO(proj5): implement
+
 
         return;
     }
@@ -701,25 +721,34 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     void restartRedo() {
         // TODO(proj5): implement
-        List<Long> values = new ArrayList<>(dirtyPageTable.values());
-        Collections.sort(values);
-
-        for (Long val : values) {
-            LogRecord record = logManager.fetchLogRecord(val);
-            boolean partitionType = record.getType() == LogType.ALLOC_PART || record.getType() == LogType.FREE_PART ||
-                                record.getType() == LogType.UNDO_ALLOC_PART || record.getType() == LogType.UNDO_FREE_PART;
-            boolean pageType = record.getType() == LogType.UNDO_FREE_PAGE || record.getType() == LogType.UNDO_UPDATE_PAGE ||
-                                record.getType() == LogType.UNDO_ALLOC_PAGE || record.getType() == LogType.UPDATE_PAGE ||
-                                record.getType() == LogType.ALLOC_PAGE || record.getType() == LogType.FREE_PAGE;
-
-            Optional<Long> pageNum = record.getPageNum();
-            boolean inDPT = false;
-            if (pageNum.isPresent() && dirtyPageTable.containsKey(pageNum.get())) {
-                inDPT = true;
+        long minLSN = Collections.min(dirtyPageTable.values());
+        Iterator<LogRecord> records = logManager.scanFrom(minLSN);
+        while (records.hasNext()) {
+            LogRecord record = records.next();
+            if (!record.isRedoable()) {
+                continue;
             }
-            if (record.isRedoable() && (partitionType || (pageType && inDPT)) ) {
+            boolean partitionType = record.getType() == LogType.ALLOC_PART || record.getType() == LogType.FREE_PART ||
+                    record.getType() == LogType.UNDO_ALLOC_PART || record.getType() == LogType.UNDO_FREE_PART;
+            boolean pageType = record.getType() == LogType.UNDO_FREE_PAGE || record.getType() == LogType.UNDO_UPDATE_PAGE ||
+                    record.getType() == LogType.UNDO_ALLOC_PAGE || record.getType() == LogType.UPDATE_PAGE ||
+                    record.getType() == LogType.ALLOC_PAGE || record.getType() == LogType.FREE_PAGE;
+            Optional<Long> pageNum = record.getPageNum();
+            boolean inDPT = pageNum.isPresent() && dirtyPageTable.containsKey(pageNum.get());
+            //the LSN is not less than the recLSN of the page, and
+            //the pageLSN on the page itself is strictly less than the LSN of the record.
+            boolean shouldRedo = partitionType;
+            if (!shouldRedo && inDPT && pageType) {
+                long recLSN = dirtyPageTable.get(pageNum.get());
+                LockContext context = getPageLockContext(pageNum.get());
+
+                long pageLSN = bufferManager.fetchPage(context, pageNum.get(), false).getPageLSN();
+                shouldRedo = record.getLSN() >= recLSN && record.getLSN() >= pageLSN;
+            }
+            if (shouldRedo) {
                 record.redo(diskSpaceManager, bufferManager);
             }
+
         }
 
     }
@@ -755,9 +784,15 @@ public class ARIESRecoveryManager implements RecoveryManager {
             if (record.isUndoable()) {
                 Pair<LogRecord, Boolean> CLR = record.undo(lastLSN);
                 long l = logManager.appendToLog(CLR.getFirst());
+                if (CLR.getSecond()) {
+                    logManager.flushToLSN(CLR.getFirst().getLSN());
+                }
                 transactionTable.get(p.getSecond().getTransNum()).lastLSN = l;
+
                 dirtyPageTable.put(record.getPageNum().get(), CLR.getFirst().getLSN());
+
                 CLR.getFirst().redo(diskSpaceManager, bufferManager);
+
 
             }
 
@@ -768,7 +803,6 @@ public class ARIESRecoveryManager implements RecoveryManager {
             } else {
                 xacts.add(new Pair<>(LSN, p.getSecond()));
             }
-
 
 
         }

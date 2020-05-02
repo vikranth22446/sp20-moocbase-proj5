@@ -1214,6 +1214,7 @@ public class TestRecoveryManager {
                 put(10000000007L, LSNs.get(13));
             }
         }, dirtyPageTable);
+        System.out.println(transactionTable.get(6L).transaction.getStatus());
 
         assertEquals(new HashMap<Long, TransactionTableEntry>() {
             {

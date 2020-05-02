@@ -635,8 +635,33 @@ public class ARIESRecoveryManager implements RecoveryManager {
     @Override
     public Runnable restart() {
         // TODO(proj5): implement
+        restartAnalysis();
+        restartRedo();
+        bufferManager.iterPageNums((pageNum, dirty) -> { // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f2
+            if (dirty) {
+                dirtyPageTable.remove(pageNum);
+//                System.out.println(pageNum);
+            }
+        });
+
         return () -> {
+            restartUndo();
+            checkpoint();
         };
+    }
+
+    public TransactionTableEntry createNewXact(TransactionTableEntry entry, long transNum) {
+        return createNewXactType(entry, transNum, null);
+    }
+
+    public TransactionTableEntry createNewXactType(TransactionTableEntry entry, long transNum, Transaction.Status status) {
+        if (entry != null) return entry;
+        Transaction xact = newTransaction.apply(transNum);
+        if (status != null) {
+            xact.setStatus(status);
+        }
+        startTransaction(xact);
+        return this.transactionTable.get(xact.getTransNum());
     }
 
     /**
@@ -674,23 +699,200 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     void restartAnalysis() {
         // Read master record
-        LogRecord record = logManager.fetchLogRecord(0L);
-        assert (record != null);
+        LogRecord zeroRecord = logManager.fetchLogRecord(0L);
+        assert (zeroRecord != null);
         // Type casting
-        assert (record.getType() == LogType.MASTER);
-        MasterLogRecord masterRecord = (MasterLogRecord) record;
+        assert (zeroRecord.getType() == LogType.MASTER);
+        MasterLogRecord masterRecord = (MasterLogRecord) zeroRecord;
         // Get start checkpoint LSN
         long LSN = masterRecord.lastCheckpointLSN;
         Iterator<LogRecord> iter = logManager.scanFrom(LSN);
         while (iter.hasNext()) {
-            LogRecord nextRecord = iter.next();
+            LogRecord record = iter.next();
+            LogType recordType = record.getType();
+            //https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f115 Weird issue with 6th transaction being included. The fix was not iterate over master record
+            if (isPageType(record) || isPartitionType(record)) {
+                if (!record.getTransNum().isPresent()) {
+                    continue;
+                }
+
+                long transNum = record.getTransNum().get();
+                TransactionTableEntry tableEntry = transactionTable.get(transNum);
+
+                if (recordType == LogType.UPDATE_PAGE || recordType == LogType.UNDO_UPDATE_PAGE) {
+                    tableEntry = createNewXactType(tableEntry, transNum, Transaction.Status.RUNNING);
+                } else {
+                    tableEntry = createNewXactType(tableEntry, transNum, Transaction.Status.RECOVERY_ABORTING);
+                }
+
+                Transaction xact = tableEntry.transaction;
+                tableEntry.lastLSN = record.getLSN();
+
+                if (isPartitionType(record)) {
+                    continue; // Ignore if update part type
+                }
+                if (!record.getPageNum().isPresent()) {
+                    continue;
+                }
+                long pageNum = record.getPageNum().get();
+                if (recordType == LogType.UPDATE_PAGE || recordType == LogType.UNDO_UPDATE_PAGE) {
+                    dirtyPageTable.putIfAbsent(pageNum, record.getLSN());
+                } else {
+                    dirtyPageTable.remove(pageNum); // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f35
+                }
+
+                tableEntry.touchedPages.add(pageNum);
+                LockContext context = getPageLockContext(pageNum);
+                acquireTransactionLock(xact, context, LockType.X);
+            }
 
 
+            if (recordType == LogType.ABORT_TRANSACTION
+                    || recordType == LogType.COMMIT_TRANSACTION
+                    || recordType == LogType.END_TRANSACTION) {
+                if (!record.getTransNum().isPresent()) {
+                    continue;
+                }
+                if (!record.getTransNum().isPresent()) {
+                    continue;
+                }
+                long recordTransNum = record.getTransNum().get();
+                TransactionTableEntry recordTableEntry = transactionTable.get(recordTransNum);
+                if (recordTableEntry == null && recordType == LogType.END_TRANSACTION) {
+                    // If at end of transaction no need to add it.
+                    continue;
+                }
+                if (recordType == LogType.COMMIT_TRANSACTION) {
+                    recordTableEntry = createNewXactType(recordTableEntry, recordTransNum, Transaction.Status.COMMITTING);
+                } else {
+                    recordTableEntry = createNewXactType(recordTableEntry, recordTransNum, Transaction.Status.RECOVERY_ABORTING);
+                }
+                Transaction xact = recordTableEntry.transaction;
+                recordTableEntry.lastLSN = Math.max(record.getLSN(), recordTableEntry.lastLSN);
 
+                if (recordType == LogType.END_TRANSACTION) {
+                    for (Map.Entry<Long, TransactionTableEntry> item : transactionTable.entrySet()) {
+                        TransactionTableEntry transactionTableEntry = item.getValue();
+                        long transactionLastLSN = transactionTableEntry.lastLSN;
+                        Transaction transaction = transactionTableEntry.transaction;
+                        if (transaction.getStatus() == Transaction.Status.COMMITTING) {
+                            transaction.cleanup();
+                            transaction.setStatus(Transaction.Status.COMPLETE);
+                            logManager.appendToLog(new EndTransactionLogRecord(transaction.getTransNum(), transactionLastLSN));
+                            if (!transactionTable.containsKey(transaction.getTransNum())) {
+                                // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f11
+                                TransactionTableEntry newTransac = createNewXact(null, transaction.getTransNum());
+                                if (newTransac.transaction.getStatus() == Transaction.Status.COMPLETE) {
+                                    transactionTable.remove(newTransac.transaction.getTransNum());
+                                }
+
+                            } else {
+                                transactionTable.remove(transaction.getTransNum());
+                            }
+                        }
+
+                        if (transaction.getStatus() == Transaction.Status.RUNNING) {
+                            transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                            long newAbortLSN = logManager.appendToLog(new AbortTransactionLogRecord(transaction.getTransNum(), transactionLastLSN));
+                            transactionTableEntry.lastLSN = newAbortLSN;
+                        }
+
+                    }
+                } else if (recordType == LogType.ABORT_TRANSACTION) {
+                    xact.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                } else if (recordType == LogType.COMMIT_TRANSACTION) {
+                    xact.setStatus(Transaction.Status.COMMITTING);
+                }
+
+
+            }
+
+
+            if (record.type == LogType.BEGIN_CHECKPOINT) {
+                record.getMaxTransactionNum().ifPresent(aLong -> updateTransactionCounter.accept(aLong));
+            }
+
+            if (record.type == LogType.END_CHECKPOINT) {
+                for (Map.Entry<Long, Long> item : record.getDirtyPageTable().entrySet()) {
+                    this.dirtyPageTable.put(item.getKey(), item.getValue());
+                }
+                for (Map.Entry<Long, Pair<Transaction.Status, Long>> item : record.getTransactionTable().entrySet()) {
+                    long transNum = item.getKey();
+                    Transaction.Status status = item.getValue().getFirst();
+                    long recordLastLSN = item.getValue().getSecond();
+
+                    TransactionTableEntry tableEntry = transactionTable.get(transNum);
+                    tableEntry = createNewXactType(tableEntry, transNum, status);
+                    Transaction transaction = tableEntry.transaction;
+                    transaction.setStatus(status); // Record will always overwrite
+
+                    // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f21 Weird edge case for commiting then aborting or something like that
+                    tableEntry.lastLSN = Math.max(tableEntry.lastLSN, recordLastLSN); // Record will always overwrite if max
+
+                    // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f17 ?? maybe and https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f140
+                    if (tableEntry.transaction.getStatus() == Transaction.Status.RUNNING || tableEntry.transaction.getStatus() == Transaction.Status.ABORTING) {
+                        if (transaction.getStatus() == Transaction.Status.RUNNING) {
+                            transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                            long newAbortLSN = logManager.appendToLog(new AbortTransactionLogRecord(transaction.getTransNum(), tableEntry.lastLSN));
+                            tableEntry.lastLSN = newAbortLSN;
+                        }
+                    }
+
+
+                    if (transaction.getStatus() == Transaction.Status.COMMITTING) {
+                        transaction.cleanup();
+                        transaction.setStatus(Transaction.Status.COMPLETE);
+                        logManager.appendToLog(new EndTransactionLogRecord(transaction.getTransNum(), tableEntry.lastLSN));
+                        if (!transactionTable.containsKey(transaction.getTransNum())) {
+                            // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f11
+                            TransactionTableEntry newTransac = createNewXact(null, transaction.getTransNum());
+                            if (newTransac.transaction.getStatus() == Transaction.Status.COMPLETE) {
+                                transactionTable.remove(newTransac.transaction.getTransNum());
+                            }
+
+                        } else {
+                            transactionTable.remove(transaction.getTransNum());
+                        }
+                    }
+
+                }
+
+                for (Map.Entry<Long, List<Long>> transNumPagesPair : record.getTransactionTouchedPages().entrySet()) {
+                    long transNum = transNumPagesPair.getKey();
+                    List<Long> pages = transNumPagesPair.getValue();
+                    TransactionTableEntry tableEntry = transactionTable.get(transNum);
+                    tableEntry = createNewXactType(tableEntry, transNum, Transaction.Status.COMPLETE);
+
+                    Transaction transaction = tableEntry.transaction;
+                    // We only care about non complete transactions
+                    if (transaction.getStatus() == Transaction.Status.COMPLETE) {
+                        transactionTable.remove(transaction.getTransNum());
+                        continue;
+                    }
+                    for (Long pageNum : pages) {
+                        tableEntry.touchedPages.add(pageNum);
+                        LockContext context = getPageLockContext(pageNum);
+                        acquireTransactionLock(transaction, context, LockType.X);
+                    }
+
+                }
+            }
         }
         // TODO(proj5): implement
 
+
         return;
+    }
+
+    public boolean isPartitionType(LogRecord record) {
+        return record.getType() == LogType.ALLOC_PART || record.getType() == LogType.FREE_PART ||
+                record.getType() == LogType.UNDO_ALLOC_PART || record.getType() == LogType.UNDO_FREE_PART;
+    }
+
+    public boolean isPageType(LogRecord record) {
+        return record.getType() == LogType.UNDO_FREE_PAGE || record.getType() == LogType.UNDO_UPDATE_PAGE ||
+                record.getType() == LogType.UNDO_ALLOC_PAGE || record.getType() == LogType.UPDATE_PAGE ||
+                record.getType() == LogType.ALLOC_PAGE || record.getType() == LogType.FREE_PAGE;
     }
 
     /**
@@ -712,11 +914,8 @@ public class ARIESRecoveryManager implements RecoveryManager {
             if (!record.isRedoable()) {
                 continue;
             }
-            boolean partitionType = record.getType() == LogType.ALLOC_PART || record.getType() == LogType.FREE_PART ||
-                    record.getType() == LogType.UNDO_ALLOC_PART || record.getType() == LogType.UNDO_FREE_PART;
-            boolean pageType = record.getType() == LogType.UNDO_FREE_PAGE || record.getType() == LogType.UNDO_UPDATE_PAGE ||
-                    record.getType() == LogType.UNDO_ALLOC_PAGE || record.getType() == LogType.UPDATE_PAGE ||
-                    record.getType() == LogType.ALLOC_PAGE || record.getType() == LogType.FREE_PAGE;
+            boolean partitionType = isPartitionType(record);
+            boolean pageType = isPageType(record);
             Optional<Long> pageNum = record.getPageNum();
             boolean inDPT = pageNum.isPresent() && dirtyPageTable.containsKey(pageNum.get());
             //the LSN is not less than the recLSN of the page, and
@@ -772,8 +971,11 @@ public class ARIESRecoveryManager implements RecoveryManager {
                     logManager.flushToLSN(CLR.getFirst().getLSN());
                 }
                 transactionTable.get(p.getSecond().getTransNum()).lastLSN = l;
+
                 dirtyPageTable.put(record.getPageNum().get(), CLR.getFirst().getLSN());
+
                 CLR.getFirst().redo(diskSpaceManager, bufferManager);
+
 
             }
 
@@ -783,6 +985,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
                 end(p.getSecond().getTransNum());
 //                p.getSecond().setStatus(Transaction.Status.COMPLETE);
 //                transactionTable.remove(p.getSecond().getTransNum());
+                // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f80 says to avoid using end here YOLO
             } else {
                 xacts.add(new Pair<>(LSN, p.getSecond()));
             }

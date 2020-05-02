@@ -703,6 +703,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
         // TODO(proj5): implement
         List<Long> values = new ArrayList<>(dirtyPageTable.values());
         Collections.sort(values);
+
         for (Long val : values) {
             LogRecord record = logManager.fetchLogRecord(val);
             boolean partitionType = record.getType() == LogType.ALLOC_PART || record.getType() == LogType.FREE_PART ||
@@ -763,8 +764,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
             long LSN = record.getUndoNextLSN().isPresent() ? record.getUndoNextLSN().get() : record.getPrevLSN().get();
 
             if (LSN == 0) {
-                p.getSecond().setStatus(Transaction.Status.COMPLETE);
-                transactionTable.remove(p.getSecond().getTransNum());
+                end(p.getSecond().getTransNum());
             } else {
                 xacts.add(new Pair<>(LSN, p.getSecond()));
             }

@@ -806,9 +806,19 @@ public class ARIESRecoveryManager implements RecoveryManager {
                     long recordLastLSN = item.getValue().getSecond();
 
                     TransactionTableEntry tableEntry = transactionTable.get(transNum);
-                    tableEntry = createNewXactType(tableEntry, transNum, status);
+                    tableEntry = createNewXact(tableEntry, transNum);
                     Transaction transaction = tableEntry.transaction;
-                    transaction.setStatus(status); // Record will always overwrite
+                    if (transaction.getStatus() == Transaction.Status.COMPLETE) {
+                        this.transactionTable.remove(transaction.getTransNum());
+                        continue;
+                    }
+                    if (status == Transaction.Status.ABORTING) {
+                        status = Transaction.Status.RECOVERY_ABORTING;
+                    }
+                    // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f5
+                    if (transaction.getStatus() != Transaction.Status.COMMITTING && transaction.getStatus() != Transaction.Status.RECOVERY_ABORTING) {
+                        transaction.setStatus(status); // Record will always overwrite
+                    }
                     tableEntry.lastLSN = Math.max(tableEntry.lastLSN, recordLastLSN); // Record will always overwrite if max
 
                 }
@@ -817,7 +827,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
                     long transNum = transNumPagesPair.getKey();
                     List<Long> pages = transNumPagesPair.getValue();
                     TransactionTableEntry tableEntry = transactionTable.get(transNum);
-                    tableEntry = createNewXactType(tableEntry, transNum, Transaction.Status.COMPLETE);
+                    tableEntry = createNewXact(tableEntry, transNum);
 
                     Transaction transaction = tableEntry.transaction;
                     // We only care about non complete transactions

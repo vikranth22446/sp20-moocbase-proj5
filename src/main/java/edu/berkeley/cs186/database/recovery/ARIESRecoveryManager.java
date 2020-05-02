@@ -681,7 +681,10 @@ public class ARIESRecoveryManager implements RecoveryManager {
         MasterLogRecord masterRecord = (MasterLogRecord) record;
         // Get start checkpoint LSN
         long LSN = masterRecord.lastCheckpointLSN;
-
+        Iterator<LogRecord> iter = logManager.scanFrom(LSN);
+        while (iter.hasNext()) {
+            LogRecord nextRecord = iter.next();
+        }
         // TODO(proj5): implement
 
         return;

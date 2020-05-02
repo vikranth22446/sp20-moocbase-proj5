@@ -851,7 +851,6 @@ public class ARIESRecoveryManager implements RecoveryManager {
             long transNum = item.getKey();
 
             TransactionTableEntry tableEntry = transactionTable.get(transNum);
-            System.out.println(tableEntry);
             if (tableEntry == null) {
                 continue;
             }
@@ -932,7 +931,9 @@ public class ARIESRecoveryManager implements RecoveryManager {
                 LockContext context = getPageLockContext(pageNum.get());
 
                 long pageLSN = bufferManager.fetchPage(context, pageNum.get(), false).getPageLSN();
-                shouldRedo = record.getLSN() >= recLSN && record.getLSN() >= pageLSN;
+
+                // pageLSN of the page is strictly less than the LSN of the record
+                shouldRedo = record.getLSN() >= recLSN && record.getLSN() > pageLSN;
             }
             if (shouldRedo) {
                 record.redo(diskSpaceManager, bufferManager);

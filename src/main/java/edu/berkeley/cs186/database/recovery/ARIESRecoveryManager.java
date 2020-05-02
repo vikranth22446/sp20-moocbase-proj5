@@ -154,6 +154,22 @@ public class ARIESRecoveryManager implements RecoveryManager {
                 // true if needs to flushed false otherwise
                 logManager.flushToLSN(undoPair.getFirst().getLSN());
             }
+
+            // https://piazza.com/class/k5ecyhh3xdw1dd?cid=945 TODO FIX THIS. I USED THE SAME LOGIC FOR RESTART UNDO. SO IF A FIX IS FOUND HERE FIX THERE
+//            if (lastRecord.getPageNum().isPresent()) {
+//                if (undoPair.getFirst().getType() == LogType.ALLOC_PAGE
+//                        || undoPair.getFirst().getType() == LogType.FREE_PAGE
+//                        || undoPair.getFirst().getType() == LogType.UNDO_ALLOC_PAGE
+//                        || undoPair.getFirst().getType() == LogType.UNDO_FREE_PAGE) {
+//                    dirtyPageTable.remove(lastRecord.getPageNum().get());
+//                } else if (lastRecord.getType() == LogType.UPDATE_PAGE) {
+//                    dirtyPageTable.put(lastRecord.getPageNum().get(), undoPair.getFirst().getLSN());
+//                } else if (lastRecord.getType() == LogType.UNDO_UPDATE_PAGE) {
+//                    dirtyPageTable.putIfAbsent(lastRecord.getPageNum().get(), undoPair.getFirst().getLSN());
+//                }
+//            }
+
+
             undoPair.getFirst().redo(diskSpaceManager, bufferManager);
 
             return Optional.of(undoPair.getFirst().getLSN());
@@ -637,13 +653,12 @@ public class ARIESRecoveryManager implements RecoveryManager {
         // TODO(proj5): implement
         restartAnalysis();
         restartRedo();
+
         bufferManager.iterPageNums((pageNum, dirty) -> { // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f2
-            if (dirty) {
+            if (!dirty) {
                 dirtyPageTable.remove(pageNum);
-//                System.out.println(pageNum);
             }
         });
-
         return () -> {
             restartUndo();
             checkpoint();
@@ -718,12 +733,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
 
                 long transNum = record.getTransNum().get();
                 TransactionTableEntry tableEntry = transactionTable.get(transNum);
-
-                if (recordType == LogType.UPDATE_PAGE || recordType == LogType.UNDO_UPDATE_PAGE) {
-                    tableEntry = createNewXactType(tableEntry, transNum, Transaction.Status.RUNNING);
-                } else {
-                    tableEntry = createNewXactType(tableEntry, transNum, Transaction.Status.RECOVERY_ABORTING);
-                }
+                tableEntry = createNewXact(tableEntry, transNum);
 
                 Transaction xact = tableEntry.transaction;
                 tableEntry.lastLSN = record.getLSN();
@@ -731,13 +741,16 @@ public class ARIESRecoveryManager implements RecoveryManager {
                 if (isPartitionType(record)) {
                     continue; // Ignore if update part type
                 }
+
                 if (!record.getPageNum().isPresent()) {
                     continue;
                 }
+
                 long pageNum = record.getPageNum().get();
                 if (recordType == LogType.UPDATE_PAGE || recordType == LogType.UNDO_UPDATE_PAGE) {
                     dirtyPageTable.putIfAbsent(pageNum, record.getLSN());
                 } else {
+                    // No need to explicitly flush
                     dirtyPageTable.remove(pageNum); // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f35
                 }
 
@@ -758,46 +771,15 @@ public class ARIESRecoveryManager implements RecoveryManager {
                 }
                 long recordTransNum = record.getTransNum().get();
                 TransactionTableEntry recordTableEntry = transactionTable.get(recordTransNum);
-                if (recordTableEntry == null && recordType == LogType.END_TRANSACTION) {
-                    // If at end of transaction no need to add it.
-                    continue;
-                }
-                if (recordType == LogType.COMMIT_TRANSACTION) {
-                    recordTableEntry = createNewXactType(recordTableEntry, recordTransNum, Transaction.Status.COMMITTING);
-                } else {
-                    recordTableEntry = createNewXactType(recordTableEntry, recordTransNum, Transaction.Status.RECOVERY_ABORTING);
-                }
+                recordTableEntry = createNewXact(recordTableEntry, recordTransNum);
+
                 Transaction xact = recordTableEntry.transaction;
                 recordTableEntry.lastLSN = Math.max(record.getLSN(), recordTableEntry.lastLSN);
 
                 if (recordType == LogType.END_TRANSACTION) {
-                    for (Map.Entry<Long, TransactionTableEntry> item : transactionTable.entrySet()) {
-                        TransactionTableEntry transactionTableEntry = item.getValue();
-                        long transactionLastLSN = transactionTableEntry.lastLSN;
-                        Transaction transaction = transactionTableEntry.transaction;
-                        if (transaction.getStatus() == Transaction.Status.COMMITTING) {
-                            transaction.cleanup();
-                            transaction.setStatus(Transaction.Status.COMPLETE);
-                            logManager.appendToLog(new EndTransactionLogRecord(transaction.getTransNum(), transactionLastLSN));
-                            if (!transactionTable.containsKey(transaction.getTransNum())) {
-                                // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f11
-                                TransactionTableEntry newTransac = createNewXact(null, transaction.getTransNum());
-                                if (newTransac.transaction.getStatus() == Transaction.Status.COMPLETE) {
-                                    transactionTable.remove(newTransac.transaction.getTransNum());
-                                }
-
-                            } else {
-                                transactionTable.remove(transaction.getTransNum());
-                            }
-                        }
-
-                        if (transaction.getStatus() == Transaction.Status.RUNNING) {
-                            transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
-                            long newAbortLSN = logManager.appendToLog(new AbortTransactionLogRecord(transaction.getTransNum(), transactionLastLSN));
-                            transactionTableEntry.lastLSN = newAbortLSN;
-                        }
-
-                    }
+                    xact.cleanup();
+                    xact.setStatus(Transaction.Status.COMPLETE);
+                    transactionTable.remove(xact.getTransNum());
                 } else if (recordType == LogType.ABORT_TRANSACTION) {
                     xact.setStatus(Transaction.Status.RECOVERY_ABORTING);
                 } else if (recordType == LogType.COMMIT_TRANSACTION) {
@@ -816,6 +798,8 @@ public class ARIESRecoveryManager implements RecoveryManager {
                 for (Map.Entry<Long, Long> item : record.getDirtyPageTable().entrySet()) {
                     this.dirtyPageTable.put(item.getKey(), item.getValue());
                 }
+
+
                 for (Map.Entry<Long, Pair<Transaction.Status, Long>> item : record.getTransactionTable().entrySet()) {
                     long transNum = item.getKey();
                     Transaction.Status status = item.getValue().getFirst();
@@ -825,35 +809,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
                     tableEntry = createNewXactType(tableEntry, transNum, status);
                     Transaction transaction = tableEntry.transaction;
                     transaction.setStatus(status); // Record will always overwrite
-
-                    // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f21 Weird edge case for commiting then aborting or something like that
                     tableEntry.lastLSN = Math.max(tableEntry.lastLSN, recordLastLSN); // Record will always overwrite if max
-
-                    // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f17 ?? maybe and https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f140
-                    if (tableEntry.transaction.getStatus() == Transaction.Status.RUNNING || tableEntry.transaction.getStatus() == Transaction.Status.ABORTING) {
-                        if (transaction.getStatus() == Transaction.Status.RUNNING) {
-                            transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
-                            long newAbortLSN = logManager.appendToLog(new AbortTransactionLogRecord(transaction.getTransNum(), tableEntry.lastLSN));
-                            tableEntry.lastLSN = newAbortLSN;
-                        }
-                    }
-
-
-                    if (transaction.getStatus() == Transaction.Status.COMMITTING) {
-                        transaction.cleanup();
-                        transaction.setStatus(Transaction.Status.COMPLETE);
-                        logManager.appendToLog(new EndTransactionLogRecord(transaction.getTransNum(), tableEntry.lastLSN));
-                        if (!transactionTable.containsKey(transaction.getTransNum())) {
-                            // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f11
-                            TransactionTableEntry newTransac = createNewXact(null, transaction.getTransNum());
-                            if (newTransac.transaction.getStatus() == Transaction.Status.COMPLETE) {
-                                transactionTable.remove(newTransac.transaction.getTransNum());
-                            }
-
-                        } else {
-                            transactionTable.remove(transaction.getTransNum());
-                        }
-                    }
 
                 }
 
@@ -878,7 +834,46 @@ public class ARIESRecoveryManager implements RecoveryManager {
                 }
             }
         }
+
         // TODO(proj5): implement
+
+        for (Map.Entry<Long, TransactionTableEntry> item : this.transactionTable.entrySet()) {
+            long transNum = item.getKey();
+
+            TransactionTableEntry tableEntry = transactionTable.get(transNum);
+            System.out.println(tableEntry);
+            if (tableEntry == null) {
+                continue;
+            }
+
+            Transaction transaction = tableEntry.transaction;
+
+            // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f21 Weird edge case for commiting then aborting or something like that
+
+            // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f17 ?? maybe and https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f140
+            if (transaction.getStatus() == Transaction.Status.RUNNING) {
+                transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                long newAbortLSN = logManager.appendToLog(new AbortTransactionLogRecord(transaction.getTransNum(), tableEntry.lastLSN));
+                tableEntry.lastLSN = newAbortLSN;
+            }
+
+            if (transaction.getStatus() == Transaction.Status.COMMITTING) {
+                logManager.appendToLog(new EndTransactionLogRecord(transaction.getTransNum(), tableEntry.lastLSN));
+                if (!transactionTable.containsKey(transaction.getTransNum())) {
+                    // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f11
+                    TransactionTableEntry newTransac = createNewXact(null, transaction.getTransNum());
+                    if (newTransac.transaction.getStatus() == Transaction.Status.COMPLETE) {
+                        transactionTable.remove(newTransac.transaction.getTransNum());
+                    }
+
+                } else {
+                    transaction.cleanup();
+                    transaction.setStatus(Transaction.Status.COMPLETE);
+                    transactionTable.remove(transaction.getTransNum());
+                }
+            }
+
+        }
 
 
         return;
@@ -950,9 +945,9 @@ public class ARIESRecoveryManager implements RecoveryManager {
     void restartUndo() {
         // TODO(proj5): implement
         List<Pair<Long, Transaction>> abortingTransactions = new ArrayList<>();
-        for (TransactionTableEntry e : transactionTable.values()) {
-            if (e.transaction.getStatus() == Transaction.Status.RECOVERY_ABORTING) {
-                abortingTransactions.add(new Pair<>(e.lastLSN, e.transaction));
+        for (TransactionTableEntry entry : transactionTable.values()) {
+            if (entry.transaction.getStatus() == Transaction.Status.RECOVERY_ABORTING) {
+                abortingTransactions.add(new Pair<>(entry.lastLSN, entry.transaction));
             }
         }
 
@@ -963,16 +958,28 @@ public class ARIESRecoveryManager implements RecoveryManager {
             Pair<Long, Transaction> p = xacts.poll();
             Long lastLSN = p.getFirst();
             LogRecord record = logManager.fetchLogRecord(lastLSN);
-
+            TransactionTableEntry entry = transactionTable.get(p.getSecond().getTransNum());
             if (record.isUndoable()) {
-                Pair<LogRecord, Boolean> CLR = record.undo(lastLSN);
+                Pair<LogRecord, Boolean> CLR = record.undo(entry.lastLSN);
                 long l = logManager.appendToLog(CLR.getFirst());
                 if (CLR.getSecond()) {
                     logManager.flushToLSN(CLR.getFirst().getLSN());
                 }
                 transactionTable.get(p.getSecond().getTransNum()).lastLSN = l;
 
-                dirtyPageTable.put(record.getPageNum().get(), CLR.getFirst().getLSN());
+                // https://piazza.com/class/k5ecyhh3xdw1dd?cid=945
+                if (record.getPageNum().isPresent()) {
+                    if (CLR.getFirst().getType() == LogType.ALLOC_PAGE
+                            || CLR.getFirst().getType() == LogType.FREE_PAGE
+                            || CLR.getFirst().getType() == LogType.UNDO_ALLOC_PAGE
+                            || CLR.getFirst().getType() == LogType.UNDO_FREE_PAGE) {
+                        dirtyPageTable.remove(record.getPageNum().get());
+                    } else if (record.getType() == LogType.UPDATE_PAGE) {
+                        dirtyPageTable.put(record.getPageNum().get(), CLR.getFirst().getLSN());
+                    } else if (record.getType() == LogType.UNDO_UPDATE_PAGE) {
+                        dirtyPageTable.putIfAbsent(record.getPageNum().get(), CLR.getFirst().getLSN());
+                    }
+                }
 
                 CLR.getFirst().redo(diskSpaceManager, bufferManager);
 
@@ -980,11 +987,12 @@ public class ARIESRecoveryManager implements RecoveryManager {
             }
 
             long LSN = record.getUndoNextLSN().isPresent() ? record.getUndoNextLSN().get() : record.getPrevLSN().get();
-
+//
             if (LSN == 0) {
-                end(p.getSecond().getTransNum());
-//                p.getSecond().setStatus(Transaction.Status.COMPLETE);
-//                transactionTable.remove(p.getSecond().getTransNum());
+                p.getSecond().cleanup();
+                p.getSecond().setStatus(Transaction.Status.COMPLETE);
+                logManager.appendToLog(new EndTransactionLogRecord(p.getSecond().getTransNum(), entry.lastLSN));
+                transactionTable.remove(p.getSecond().getTransNum());
                 // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f80 says to avoid using end here YOLO
             } else {
                 xacts.add(new Pair<>(LSN, p.getSecond()));

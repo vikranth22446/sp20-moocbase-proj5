@@ -856,8 +856,10 @@ public class ARIESRecoveryManager implements RecoveryManager {
                 long newAbortLSN = logManager.appendToLog(new AbortTransactionLogRecord(transaction.getTransNum(), tableEntry.lastLSN));
                 tableEntry.lastLSN = newAbortLSN;
             }
-
+            // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f11
             if (transaction.getStatus() == Transaction.Status.COMMITTING) {
+                transaction.cleanup();
+                transaction.setStatus(Transaction.Status.COMPLETE);
                 logManager.appendToLog(new EndTransactionLogRecord(transaction.getTransNum(), tableEntry.lastLSN));
                 if (!transactionTable.containsKey(transaction.getTransNum())) {
                     // https://piazza.com/class/k5ecyhh3xdw1dd?cid=902_f11
@@ -867,8 +869,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
                     }
 
                 } else {
-                    transaction.cleanup();
-                    transaction.setStatus(Transaction.Status.COMPLETE);
+
                     transactionTable.remove(transaction.getTransNum());
                 }
             }

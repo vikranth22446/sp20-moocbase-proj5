@@ -713,8 +713,17 @@ public class ARIESRecoveryManager implements RecoveryManager {
                     record.getType() == LogType.ALLOC_PAGE || record.getType() == LogType.FREE_PAGE;
             Optional<Long> pageNum = record.getPageNum();
             boolean inDPT = pageNum.isPresent() && dirtyPageTable.containsKey(pageNum.get());
+            //the LSN is not less than the recLSN of the page, and
+            //the pageLSN on the page itself is strictly less than the LSN of the record.
+            boolean shouldRedo = partitionType;
+            if (!shouldRedo && inDPT && pageType) {
+                long recLSN = dirtyPageTable.get(pageNum.get());
+                LockContext context = getPageLockContext(pageNum.get());
 
-            if ((inDPT && pageType && record.getLSN() >=  dirtyPageTable.get(pageNum.get())) || partitionType) {
+                long pageLSN = bufferManager.fetchPage(context, pageNum.get(), false).getPageLSN();
+                shouldRedo = record.getLSN() >= recLSN && record.getLSN() >= pageLSN;
+            }
+            if (shouldRedo) {
                 record.redo(diskSpaceManager, bufferManager);
             }
 

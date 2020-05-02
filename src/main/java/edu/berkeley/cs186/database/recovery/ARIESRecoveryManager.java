@@ -738,32 +738,39 @@ public class ARIESRecoveryManager implements RecoveryManager {
         // TODO(proj5): implement
         List<Pair<Long, Transaction>> abortingTransactions = new ArrayList<>();
         for (TransactionTableEntry e : transactionTable.values()) {
-            if (e.transaction.getStatus() == Transaction.Status.ABORTING) {
+            if (e.transaction.getStatus() == Transaction.Status.RECOVERY_ABORTING) {
                 abortingTransactions.add(new Pair<>(e.lastLSN, e.transaction));
             }
         }
 
-        PriorityQueue<Pair<Long, Transaction>> xacts = new PriorityQueue<>(abortingTransactions.size(), new PairFirstReverseComparator<Long, Transaction>());
+        PriorityQueue<Pair<Long, Transaction>> xacts = new PriorityQueue<>(new PairFirstReverseComparator<>());
         xacts.addAll(abortingTransactions);
 
         while (!xacts.isEmpty()) {
             Pair<Long, Transaction> p = xacts.poll();
             Long lastLSN = p.getFirst();
             LogRecord record = logManager.fetchLogRecord(lastLSN);
+
             if (record.isUndoable()) {
-                long LSN = lastLSN;
-                while (LSN != 0) {
-                    Pair<LogRecord, Boolean> CLR = record.undo(lastLSN);
-                    CLR.getFirst().redo(diskSpaceManager, bufferManager);
-
-                    logManager.appendToLog(CLR.getFirst());
-                    LSN = CLR.getFirst().getUndoNextLSN().isPresent() ? CLR.getFirst().getUndoNextLSN().get() : CLR.getFirst().getPrevLSN().get();
-                }
-                transactionTable.remove(p.getSecond().getTransNum());
-
-
+                Pair<LogRecord, Boolean> CLR = record.undo(lastLSN);
+                long l = logManager.appendToLog(CLR.getFirst());
+                transactionTable.get(p.getSecond().getTransNum()).lastLSN = l;
+                dirtyPageTable.put(record.getPageNum().get(), CLR.getFirst().getLSN());
+                CLR.getFirst().redo(diskSpaceManager, bufferManager);
 
             }
+
+            long LSN = record.getUndoNextLSN().isPresent() ? record.getUndoNextLSN().get() : record.getPrevLSN().get();
+
+            if (LSN == 0) {
+                p.getSecond().setStatus(Transaction.Status.COMPLETE);
+                transactionTable.remove(p.getSecond().getTransNum());
+            } else {
+                xacts.add(new Pair<>(LSN, p.getSecond()));
+            }
+
+
+
         }
 
     }

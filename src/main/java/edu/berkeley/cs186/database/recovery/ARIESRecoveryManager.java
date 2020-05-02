@@ -684,6 +684,9 @@ public class ARIESRecoveryManager implements RecoveryManager {
         Iterator<LogRecord> iter = logManager.scanFrom(LSN);
         while (iter.hasNext()) {
             LogRecord nextRecord = iter.next();
+
+
+
         }
         // TODO(proj5): implement
 

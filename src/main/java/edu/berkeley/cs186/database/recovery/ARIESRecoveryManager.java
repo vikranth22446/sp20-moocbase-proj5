@@ -8,9 +8,7 @@ import edu.berkeley.cs186.database.concurrency.LockType;
 import edu.berkeley.cs186.database.concurrency.LockUtil;
 import edu.berkeley.cs186.database.io.DiskSpaceManager;
 import edu.berkeley.cs186.database.memory.BufferManager;
-import org.omg.Messaging.SYNC_WITH_TRANSPORT;
 
-import java.lang.reflect.Parameter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -177,7 +175,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
         prevLsn = lastRecord.getPrevLSN();
 
         // The following case is sketch https://piazza.com/class/k5ecyhh3xdw1dd?cid=901_f26 following this
-        if(lastRecord.getUndoNextLSN().isPresent() && lastRecord.getUndoNextLSN().get() <= stopLsn) {
+        if (lastRecord.getUndoNextLSN().isPresent() && lastRecord.getUndoNextLSN().get() <= stopLsn) {
             return lastLSN;
         }
 
@@ -185,7 +183,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
             lastRecord = logManager.fetchLogRecord(prevLsn.get());
 
             // The following case is sketch https://piazza.com/class/k5ecyhh3xdw1dd?cid=901_f26 following this
-            if(lastRecord.getUndoNextLSN().isPresent() && lastRecord.getUndoNextLSN().get() <= stopLsn) {
+            if (lastRecord.getUndoNextLSN().isPresent() && lastRecord.getUndoNextLSN().get() <= stopLsn) {
                 break;
             }
 
@@ -701,24 +699,25 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     void restartRedo() {
         // TODO(proj5): implement
-        List<Long> values = new ArrayList<>(dirtyPageTable.values());
-        Collections.sort(values);
-        for (Long val : values) {
-            LogRecord record = logManager.fetchLogRecord(val);
-            boolean partitionType = record.getType() == LogType.ALLOC_PART || record.getType() == LogType.FREE_PART ||
-                                record.getType() == LogType.UNDO_ALLOC_PART || record.getType() == LogType.UNDO_FREE_PART;
-            boolean pageType = record.getType() == LogType.UNDO_FREE_PAGE || record.getType() == LogType.UNDO_UPDATE_PAGE ||
-                                record.getType() == LogType.UNDO_ALLOC_PAGE || record.getType() == LogType.UPDATE_PAGE ||
-                                record.getType() == LogType.ALLOC_PAGE || record.getType() == LogType.FREE_PAGE;
-
-            Optional<Long> pageNum = record.getPageNum();
-            boolean inDPT = false;
-            if (pageNum.isPresent() && dirtyPageTable.containsKey(pageNum.get())) {
-                inDPT = true;
+        long minLSN = Collections.min(dirtyPageTable.values());
+        Iterator<LogRecord> records = logManager.scanFrom(minLSN);
+        while (records.hasNext()) {
+            LogRecord record = records.next();
+            if (!record.isRedoable()) {
+                continue;
             }
-            if (record.isRedoable() && (partitionType || (pageType && inDPT)) ) {
+            boolean partitionType = record.getType() == LogType.ALLOC_PART || record.getType() == LogType.FREE_PART ||
+                    record.getType() == LogType.UNDO_ALLOC_PART || record.getType() == LogType.UNDO_FREE_PART;
+            boolean pageType = record.getType() == LogType.UNDO_FREE_PAGE || record.getType() == LogType.UNDO_UPDATE_PAGE ||
+                    record.getType() == LogType.UNDO_ALLOC_PAGE || record.getType() == LogType.UPDATE_PAGE ||
+                    record.getType() == LogType.ALLOC_PAGE || record.getType() == LogType.FREE_PAGE;
+            Optional<Long> pageNum = record.getPageNum();
+            boolean inDPT = pageNum.isPresent() && dirtyPageTable.containsKey(pageNum.get());
+
+            if ((inDPT && pageType && record.getLSN() >=  dirtyPageTable.get(pageNum.get())) || partitionType) {
                 record.redo(diskSpaceManager, bufferManager);
             }
+
         }
 
     }
@@ -754,6 +753,9 @@ public class ARIESRecoveryManager implements RecoveryManager {
             if (record.isUndoable()) {
                 Pair<LogRecord, Boolean> CLR = record.undo(lastLSN);
                 long l = logManager.appendToLog(CLR.getFirst());
+                if (CLR.getSecond()) {
+                    logManager.flushToLSN(CLR.getFirst().getLSN());
+                }
                 transactionTable.get(p.getSecond().getTransNum()).lastLSN = l;
                 dirtyPageTable.put(record.getPageNum().get(), CLR.getFirst().getLSN());
                 CLR.getFirst().redo(diskSpaceManager, bufferManager);
@@ -763,12 +765,12 @@ public class ARIESRecoveryManager implements RecoveryManager {
             long LSN = record.getUndoNextLSN().isPresent() ? record.getUndoNextLSN().get() : record.getPrevLSN().get();
 
             if (LSN == 0) {
-                p.getSecond().setStatus(Transaction.Status.COMPLETE);
-                transactionTable.remove(p.getSecond().getTransNum());
+                end(p.getSecond().getTransNum());
+//                p.getSecond().setStatus(Transaction.Status.COMPLETE);
+//                transactionTable.remove(p.getSecond().getTransNum());
             } else {
                 xacts.add(new Pair<>(LSN, p.getSecond()));
             }
-
 
 
         }
